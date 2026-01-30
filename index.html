@@ -1495,10 +1495,9 @@ function stepValue(id, delta) {
 
 function syncFuel(mode, idKm, idPct) {
     const specs = getCurrentVehicleSpecs();
-    const maxRange = specs.maxFuelRangeKm || 700;
     const kmEl = document.getElementById(idKm); const pctEl = document.getElementById(idPct);
-    if(mode==='km'){ let v=parseFloat(kmEl.value); if(!isNaN(v)) pctEl.value=((v/maxRange)*100).toFixed(0); }
-    else { let v=parseFloat(pctEl.value); if(!isNaN(v)) kmEl.value=((v/100)*maxRange).toFixed(0); }
+    if(mode==='km'){ let v=parseFloat(kmEl.value); if(!isNaN(v)) pctEl.value=fuelKmToPercent(v, specs).toFixed(1); }
+    else { let v=parseFloat(pctEl.value); if(!isNaN(v)) kmEl.value=fuelPercentToKm(v, specs).toFixed(0); }
 }
 
 function toggleCampFuel() {
@@ -1707,9 +1706,9 @@ function renderEntryForm(type, data, isEdit) {
 
   // Support both arrivalFuelPct and fuelLevelPct (legacy field name from new trip form)
   const fuelPctValue = data.arrivalFuelPct ?? data.fuelLevelPct ?? null;
-  const maxFuelRange = specs.maxFuelRangeKm || 700;
+  const fuelKmValue = fuelPctValue ? fuelPercentToKm(fuelPctValue, specs).toFixed(0) : '';
   let fuelRow = `
-    <div class="form-group"><label class="form-label">${fuelLabel} Range</label><input type="number" class="form-input" id="f_fuelKm" value="${fuelPctValue?((fuelPctValue/100)*maxFuelRange).toFixed(0):''}" oninput="syncFuel('km', 'f_fuelKm', 'f_fuelPct')"></div>
+    <div class="form-group"><label class="form-label">${fuelLabel} Range</label><input type="number" class="form-input" id="f_fuelKm" value="${fuelKmValue}" oninput="syncFuel('km', 'f_fuelKm', 'f_fuelPct')"></div>
     <div class="form-group"><label class="form-label">${fuelLabel} %</label><input type="number" class="form-input" id="f_fuelPct" value="${fuelPctValue ? parseFloat(fuelPctValue.toFixed(1)) : ''}" oninput="syncFuel('pct', 'f_fuelKm', 'f_fuelPct')"></div>
   `;
 

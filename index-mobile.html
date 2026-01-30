@@ -276,8 +276,41 @@ const DEFAULT_VEHICLE_SPECS = {
   fuelTankReserve: 10,
   engineEfficiency: 43,
   maxFuelRangeKm: 700,
+  fuelGaugeCurve: 0.90,      // Exponent for km-to-% conversion (1.0 = linear)
   homeChargingCost: 0.32
 };
+
+// Convert displayed fuel range (km) to fuel percentage using calibrated curve
+function fuelKmToPercent(km, specs) {
+  const maxRange = specs.maxFuelRangeKm || 700;
+  const curve = specs.fuelGaugeCurve || 0.90;
+  if (km <= 0) return 0;
+  if (km >= maxRange) return 100;
+  return 100 * Math.pow(km / maxRange, curve);
+}
+
+// Convert fuel percentage to displayed range (km) - inverse function
+function fuelPercentToKm(percent, specs) {
+  const maxRange = specs.maxFuelRangeKm || 700;
+  const curve = specs.fuelGaugeCurve || 0.90;
+  if (percent <= 0) return 0;
+  if (percent >= 100) return maxRange;
+  return maxRange * Math.pow(percent / 100, 1 / curve);
+}
+
+// Sync fuel km and % fields
+function syncFuel(mode, idKm, idPct) {
+  const specs = getCurrentVehicleSpecs();
+  const kmEl = document.getElementById(idKm);
+  const pctEl = document.getElementById(idPct);
+  if (mode === 'km') {
+    let v = parseFloat(kmEl.value);
+    if (!isNaN(v)) pctEl.value = fuelKmToPercent(v, specs).toFixed(1);
+  } else {
+    let v = parseFloat(pctEl.value);
+    if (!isNaN(v)) kmEl.value = fuelPercentToKm(v, specs).toFixed(0);
+  }
+}
 
 const DEFAULT_SETTINGS = {
   fuelPrices: { U91: 1.75, U95: 1.85, U98: 1.95 },
@@ -343,6 +376,7 @@ function getTripVehicleSpecs(trip) {
       engineEfficiency: DEFAULT_VEHICLE_SPECS.engineEfficiency / 100,
       maxFuelRangeKm: DEFAULT_VEHICLE_SPECS.maxFuelRangeKm,
       homeChargingCost: DEFAULT_VEHICLE_SPECS.homeChargingCost,
+      fuelGaugeCurve: DEFAULT_VEHICLE_SPECS.fuelGaugeCurve,
       isPureEV: DEFAULT_VEHICLE_SPECS.fuelTankTotal === 0
     };
   }
@@ -358,6 +392,7 @@ function getTripVehicleSpecs(trip) {
     engineEfficiency: v.engineEfficiency / 100,
     maxFuelRangeKm: v.maxFuelRangeKm || 700,
     homeChargingCost: v.homeChargingCost,
+    fuelGaugeCurve: v.fuelGaugeCurve || 0.90,
     isPureEV: v.fuelTankTotal === 0
   };
 }
@@ -827,16 +862,15 @@ function formatDate(d) {
 
 window.syncFuel = function(mode, idKm, idPct) {
     const specs = getCurrentVehicleSpecs();
-    const maxRange = specs.maxFuelRangeKm || 700;
     const kmEl = document.getElementById(idKm);
     const pctEl = document.getElementById(idPct);
     if(mode === 'km') {
         const val = parseFloat(kmEl.value);
-        if(!isNaN(val)) pctEl.value = ((val / maxRange) * 100).toFixed(0);
+        if(!isNaN(val)) pctEl.value = fuelKmToPercent(val, specs).toFixed(1);
         else pctEl.value = '';
     } else {
         const val = parseFloat(pctEl.value);
-        if(!isNaN(val)) kmEl.value = ((val / 100) * maxRange).toFixed(0);
+        if(!isNaN(val)) kmEl.value = fuelPercentToKm(val, specs).toFixed(0);
         else kmEl.value = '';
     }
 }
@@ -960,7 +994,8 @@ function renderEntryForm(type, data, isEdit) {
 
   // Support both arrivalFuelPct and fuelLevelPct (legacy field name from new trip form)
   const fuelPctValue = data.arrivalFuelPct ?? data.fuelLevelPct ?? null;
-  let fuelLevelHtml = `<div class="input-group"><label class="input-label">${fuelLabel}</label><div class="ios-input-row" style="gap:10px;"><div style="flex:1"><label class="input-label" style="font-size:11px; margin-bottom:2px;">Range (km)</label><input type="number" class="ios-input" id="f_fuelKm" value="${fuelPctValue?((fuelPctValue/100)*maxFuelRange).toFixed(0):''}" oninput="syncFuel('km', 'f_fuelKm', 'f_fuelPct')"></div><div style="flex:1"><label class="input-label" style="font-size:11px; margin-bottom:2px;">Fuel %</label><input type="number" class="ios-input" id="f_fuelPct" value="${fuelPctValue||''}" oninput="syncFuel('pct', 'f_fuelKm', 'f_fuelPct')"></div></div></div>`;
+  const fuelKmValue = fuelPctValue ? fuelPercentToKm(fuelPctValue, specs).toFixed(0) : '';
+  let fuelLevelHtml = `<div class="input-group"><label class="input-label">${fuelLabel}</label><div class="ios-input-row" style="gap:10px;"><div style="flex:1"><label class="input-label" style="font-size:11px; margin-bottom:2px;">Range (km)</label><input type="number" class="ios-input" id="f_fuelKm" value="${fuelKmValue}" oninput="syncFuel('km', 'f_fuelKm', 'f_fuelPct')"></div><div style="flex:1"><label class="input-label" style="font-size:11px; margin-bottom:2px;">Fuel %</label><input type="number" class="ios-input" id="f_fuelPct" value="${fuelPctValue||''}" oninput="syncFuel('pct', 'f_fuelKm', 'f_fuelPct')"></div></div></div>`;
   
   if (type === 'waypoint') arrivalSection = `<div class="input-group"><label class="input-label">${battLabel}</label><div class="ios-input-row"><button type="button" class="stepper" onclick="stepVal('f_arrSoc', -5)">-</button><input type="number" class="ios-input" id="f_arrSoc" value="${data.arrivalSOC!==undefined?data.arrivalSOC:''}"><button type="button" class="stepper" onclick="stepVal('f_arrSoc', 5)">+</button></div></div>${fuelLevelHtml}`;
   else if (type === 'fuel') arrivalSection = fuelLevelHtml;
