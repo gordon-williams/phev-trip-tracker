@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker - v1.0 Build 1006
+  PHEV Trip Tracker - v1.0 Build 1007
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -929,7 +929,7 @@
 		
 		<!-- Version footer -->
 		<div style="text-align:center; margin-top:20px; font-size:13px; color:var(--text-muted);">
-		  v1.0 Build 1006 • MIT License<br>
+		  v1.0 Build 1007 • MIT License<br>
 		  <a href="https://github.com/gordon-williams/phev-trip-tracker" target="_blank" style="color:var(--text-muted);">github.com/gordon-williams/phev-trip-tracker</a>
 		</div>
 		
@@ -1402,7 +1402,7 @@ function renderTripDetails() {
         badgeClass = 'badge-fuel'; badgeText = 'Fuel';
         let addedPct = (entry.litres / specs.fuelTankUsable) * 100;
         let tankPct, endPct;
-        if (entry.arrivalFuelPct !== undefined && !isNaN(entry.arrivalFuelPct)) {
+        if (entry.arrivalFuelPct != null && !isNaN(entry.arrivalFuelPct)) {
             // Arrival level provided
             tankPct = entry.arrivalFuelPct;
             endPct = Math.min(tankPct + addedPct, 100);

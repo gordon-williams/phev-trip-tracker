@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker (Mobile) - v1.0 Build 1006
+  PHEV Trip Tracker (Mobile) - v1.0 Build 1007
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -234,7 +234,7 @@ window.onerror = function(msg, url, line) { return false; };
 <div id="mainContent">
   <div id="viewTrips" class="list-container">
     <div id="tripListContainer"></div>
-    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1006 • MIT License • GitHub</div>
+    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1007 • MIT License • GitHub</div>
     <div style="height: 20px;"></div>
   </div>
 
@@ -734,7 +734,7 @@ function generateDetailContent(e, index, specs) {
   if (displaySOC !== undefined) {
      arrivalHtml += `<div class="detail-data-row"><span class="detail-label">${battLabel}</span><span>${displaySOC}%</span></div>`;
   }
-  if (e.arrivalFuelPct !== undefined) {
+  if (e.arrivalFuelPct != null) {
       arrivalHtml += `<div class="detail-data-row"><span class="detail-label">${fuelLabel}</span><span>${e.arrivalFuelPct}%</span></div>`;
   }
 
@@ -1064,7 +1064,7 @@ function renderEntryForm(type, data, isEdit) {
 		// Only save arrivalFuelPct if it's a valid number
 		if (typeof arrFuelVal === 'number' && !isNaN(arrFuelVal)) entry.arrivalFuelPct = arrFuelVal;
 		if(entry.isFull) entry.departFuelPct = 100;
-		else if(entry.arrivalFuelPct !== undefined && entry.litres) {
+		else if(entry.arrivalFuelPct != null && entry.litres) {
 		  let addedPct = (entry.litres / tripSpecs.fuelTankUsable) * 100;
 		  entry.departFuelPct = Math.min(100,
 		  entry.arrivalFuelPct + addedPct);
