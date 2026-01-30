@@ -1,18 +1,21 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker - v10.0 Build 20250122
-  - NEW: Camp event type for PTL (Power-to-Load) usage while camping.
-  - NEW: Track EV consumption from PTL and ICE recharging while stationary.
-  - v9.13: HEV Equivalent economy (combined fuel+EV as L/100km).
-  - v9.13: 6-tile stats row: Distance, Cost, Fuel Econ, HEV Equiv, EV kWh, EV Wh/km.
-  - FIX: CSV export includes ArrFuel% column.
-  - FIX: Fuel% uses 50L usable capacity (10L reserve at 0%).
+  PHEV Trip Tracker - v10.1 Build 20250130
+  https://github.com/gordon-williams/phev-trip-tracker
+
+  - NEW: Draggable Trip Economics modal
+  - NEW: Configurable vehicle profiles for any PHEV/BEV
+  - NEW: Fuel gauge calibration curve (km to % conversion)
+  - NEW: Trip-level reference fuel price
+  - NEW: Import vehicle profiles from trips
+  - NEW: Carbon footprint comparison (DC vs ICE generation)
+  - FIX: Economics modal layout improvements
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>PHEV Trip Tracker v10.0.20250122</title>
+<title>PHEV Trip Tracker v10.1</title>
 
 <!-- PWA CONFIGURATION -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -925,7 +928,8 @@
 		
 		<!-- Version footer -->
 		<div style="text-align:center; margin-top:20px; font-size:13px; color:var(--text-muted);">
-		  v10.0.20250122 • Copyright © 2025 Gordon Williams
+		  v10.1 Build 20250130 • MIT License<br>
+		  <a href="https://github.com/gordon-williams/phev-trip-tracker" target="_blank" style="color:var(--text-muted);">github.com/gordon-williams/phev-trip-tracker</a>
 		</div>
 		
     </div>

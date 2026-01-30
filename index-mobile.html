@@ -1,18 +1,17 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker - v10.0 Build 20250122
-  - NEW: Camp event type for PTL (Power-to-Load) usage while camping.
-  - NEW: Track EV consumption from PTL and ICE recharging while stationary.
-  - v7.17: HEV Equivalent economy (combined fuel+EV as L/100km).
-  - v7.17: 6-tile stats grid (2x3): Distance, Cost, Fuel Econ, HEV Equiv, EV kWh, EV Wh/km.
-  - FIX: EV efficiency from SOC drops (not just charging kWh).
-  - FIX: Fuel% uses 50L usable capacity (10L reserve at 0%).
+  PHEV Trip Tracker (Mobile) - v10.1 Build 20250130
+  https://github.com/gordon-williams/phev-trip-tracker
+
+  - NEW: Configurable vehicle profiles for any PHEV/BEV
+  - NEW: Import vehicle profiles from trips
+  - NEW: Trip-level reference fuel price
 -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>PHEV Tracker v10.0.20250122</title>
+<title>PHEV Trip Tracker v10.1</title>
 
 <!-- PWA CONFIGURATION -->
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -234,7 +233,7 @@ window.onerror = function(msg, url, line) { return false; };
 <div id="mainContent">
   <div id="viewTrips" class="list-container">
     <div id="tripListContainer"></div>
-    <div class="app-footer" onclick="showInstallGuide()">v10.0.20250122 • Copyright © 2025 Gordon Williams</div>
+    <div class="app-footer" onclick="showInstallGuide()">v10.1 Build 20250130 • MIT License • GitHub</div>
     <div style="height: 20px;"></div>
   </div>
 
