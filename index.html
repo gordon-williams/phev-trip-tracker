@@ -2006,7 +2006,7 @@ function showSettingsForm(tab = 'vehicles') {
   `).join('') || '<div class="no-vehicles">No vehicles configured</div>';
 
   showOverlay(`
-    <div class="card settings-card" style="box-shadow:none; margin:0; border:none; max-width:600px;">
+    <div class="card settings-card" style="box-shadow:none; margin:0; border:none; max-width:700px;">
       <div class="settings-tabs">
         <button class="settings-tab ${tab === 'vehicles' ? 'active' : ''}" onclick="showSettingsForm('vehicles')">My Vehicles</button>
         <button class="settings-tab ${tab === 'comparison' ? 'active' : ''}" onclick="showSettingsForm('comparison')">Comparison</button>
@@ -2015,8 +2015,8 @@ function showSettingsForm(tab = 'vehicles') {
 
       <div class="settings-content" style="${tab === 'vehicles' ? '' : 'display:none;'}">
         <div class="settings-section-header">
-          <h3>Vehicle Profiles</h3>
-          <div style="display:flex; gap:8px;">
+          <h3 style="margin-right:24px;">Vehicle Profiles</h3>
+          <div style="display:flex; gap:10px;">
             <button class="btn btn-green btn-sm" onclick="editVehicle(-1)">+ Add Vehicle</button>
             <button class="btn btn-secondary btn-sm" onclick="showImportFromTripModal()">Import from Trip</button>
           </div>
