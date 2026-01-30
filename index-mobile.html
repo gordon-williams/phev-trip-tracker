@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker (Mobile) - v1.0 Build 1005
+  PHEV Trip Tracker (Mobile) - v1.0 Build 1006
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -234,7 +234,7 @@ window.onerror = function(msg, url, line) { return false; };
 <div id="mainContent">
   <div id="viewTrips" class="list-container">
     <div id="tripListContainer"></div>
-    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1005 • MIT License • GitHub</div>
+    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1006 • MIT License • GitHub</div>
     <div style="height: 20px;"></div>
   </div>
 
@@ -1335,8 +1335,8 @@ function editVehicle(idx) {
       appSettings.vehicles[idx] = newVehicle;
       saveSettings();
 
-      // Find trips using this vehicle and offer to update them
-      const affectedTrips = trips.filter(t => t.vehicleSpecs?.name === oldName || t.vehicleSpecs?.name === newVehicle.name);
+      // Find trips using this vehicle and offer to update them (exclude deleted trips)
+      const affectedTrips = trips.filter(t => !t.deleted && (t.vehicleSpecs?.name === oldName || t.vehicleSpecs?.name === newVehicle.name));
       if (affectedTrips.length > 0) {
         showUpdateTripsPrompt(newVehicle, affectedTrips);
       } else {
