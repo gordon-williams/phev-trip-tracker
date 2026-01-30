@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker (Mobile) - v1.0 Build 1007
+  PHEV Trip Tracker (Mobile) - v1.0 Build 1008
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -234,7 +234,7 @@ window.onerror = function(msg, url, line) { return false; };
 <div id="mainContent">
   <div id="viewTrips" class="list-container">
     <div id="tripListContainer"></div>
-    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1007 • MIT License • GitHub</div>
+    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1008 • MIT License • GitHub</div>
     <div style="height: 20px;"></div>
   </div>
 
@@ -1608,10 +1608,12 @@ function calculateTripSummary(trip) {
                 prevSoc = e.startSOC;
             }
         } else {
-            // For non-charging entries: use arrivalSOC
+            // For non-charging entries: use arrivalSOC or startSOC
             let socHere = null;
             if (typeof e.arrivalSOC === 'number' && !isNaN(e.arrivalSOC)) {
                 socHere = e.arrivalSOC;
+            } else if (typeof e.startSOC === 'number' && !isNaN(e.startSOC)) {
+                socHere = e.startSOC;
             }
 
             // Accumulate EV energy from SOC drops
