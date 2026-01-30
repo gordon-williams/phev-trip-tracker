@@ -1,0 +1,2216 @@
+<!doctype html>
+<!--
+  PHEV Trip Tracker - v10.0 Build 20250122
+  - NEW: Camp event type for PTL (Power-to-Load) usage while camping.
+  - NEW: Track EV consumption from PTL and ICE recharging while stationary.
+  - v7.17: HEV Equivalent economy (combined fuel+EV as L/100km).
+  - v7.17: 6-tile stats grid (2x3): Distance, Cost, Fuel Econ, HEV Equiv, EV kWh, EV Wh/km.
+  - FIX: EV efficiency from SOC drops (not just charging kWh).
+  - FIX: Fuel% uses 50L usable capacity (10L reserve at 0%).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>PHEV Tracker v10.0.20250122</title>
+
+<!-- PWA CONFIGURATION -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="PHEV Tracker">
+<meta name="theme-color" content="#F2F2F7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+
+<!-- ICONS -->
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" type="image/png" href="icon.png">
+
+<script>
+window.onerror = function(msg, url, line) { return false; };
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dropbox.js/10.34.0/Dropbox-sdk.min.js"></script>
+
+<style>
+  :root {
+    --primary: #007AFF; --primary-bg: rgba(0, 122, 255, 0.15);
+    --success: #34C759; --success-bg: rgba(52, 199, 89, 0.15);
+    --warning: #FF9500; --warning-bg: rgba(255, 149, 0, 0.15);
+    --danger: #FF3B30;
+    --bg-color: #F2F2F7; --card-bg: #FFFFFF;
+    --text-primary: #000000; --text-secondary: #8E8E93;
+    --border-color: #C6C6C8; --separator: #C6C6C8;
+    --radius: 12px;
+    --safe-top: env(safe-area-inset-top);
+    --safe-bottom: env(safe-area-inset-bottom);
+    --gauge-empty: #E5E5EA;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { 
+      --bg-color: #000000; --card-bg: #1C1C1E; 
+      --text-primary: #FFFFFF; --text-secondary: #98989D; 
+      --border-color: #38383A; --separator: #48484A;
+      --gauge-empty: #3A3A3C; 
+    }
+  }
+  
+  :root[data-theme="light"] { --bg-color: #F2F2F7; --card-bg: #FFFFFF; --text-primary: #000000; --text-secondary: #8E8E93; --border-color: #C6C6C8; --separator: #C6C6C8; --gauge-empty: #E5E5EA; }
+  :root[data-theme="dark"] { --bg-color: #000000; --card-bg: #1C1C1E; --text-primary: #FFFFFF; --text-secondary: #98989D; --border-color: #38383A; --separator: #48484A; --gauge-empty: #3A3A3C; }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html {
+    background-color: #000; /* Dark background outside app on desktop */
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    background-color: var(--bg-color); color: var(--text-primary);
+    margin: 0 auto; padding: 0; font-size: 17px;
+    padding-top: calc(var(--safe-top) + 50px);
+    padding-bottom: 100px;
+    max-width: 430px; /* iPhone 14 Pro Max width - keeps mobile feel on desktop */
+    min-height: 100vh;
+  }
+
+  /* HEADER */
+  .header {
+    position: fixed; top: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 430px;
+    height: calc(var(--safe-top) + 50px); padding-top: var(--safe-top);
+    background: var(--card-bg); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-bottom: 0.5px solid var(--border-color);
+    display: grid; grid-template-columns: 60px 1fr 60px; align-items: center;
+    padding-left: 16px; padding-right: 16px; z-index: 1000;
+  }
+  .header-title { grid-column: 2; justify-self: center; font-weight: 700; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .header-btn { grid-column: 1; justify-self: start; background: none; border: none; color: var(--primary); font-size: 17px; cursor: pointer; padding: 8px 0; }
+  .header-btn.icon { grid-column: 3; justify-self: end; font-size: 22px; }
+
+  /* LISTS */
+  .list-container { padding: 16px; }
+  .ios-card { background: var(--card-bg); border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; }
+  .trip-row { padding: 16px; border-bottom: 1px solid var(--separator); display: flex; justify-content: space-between; align-items: center; cursor: pointer; }
+  .trip-row:last-child { border-bottom: none; }
+  .trip-row:active { background-color: var(--separator); }
+  .trip-main { flex-grow: 1; }
+  .trip-title { font-weight: 600; font-size: 17px; margin-bottom: 4px; }
+  .trip-subtitle { font-size: 13px; color: var(--text-secondary); }
+  .trip-cost { font-weight: 600; color: var(--text-primary); font-size: 17px; }
+
+  /* DETAILS VIEW */
+  .detail-hero { text-align: center; padding: 20px 0; background: var(--card-bg); margin-bottom: 20px; border-bottom: 0.5px solid var(--border-color); }
+  .detail-hero h2 { margin: 0; font-size: 28px; font-weight: 800; }
+  .detail-hero p { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background-color: var(--separator); border-radius: var(--radius); overflow: hidden; margin-bottom: 24px; border: 0.5px solid var(--separator); }
+  .stats-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background-color: var(--separator); border-radius: var(--radius); overflow: hidden; margin-bottom: 24px; border: 0.5px solid var(--separator); }
+  .stat-box { background-color: var(--card-bg); padding: 10px 6px; text-align: center; }
+  .stat-label { font-size: 10px; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.3px; margin-bottom: 2px; white-space: nowrap; }
+  .stat-value { font-size: 18px; font-weight: 600; color: var(--primary); }
+
+  /* ACCORDION LIST */
+  .entry-group { background: var(--card-bg); border-radius: var(--radius); overflow: hidden; margin-bottom: 20px; }
+  
+  .entry-row { padding: 12px 16px; border-bottom: 1px solid var(--separator); display: flex; align-items: center; cursor: pointer; transition: background 0.2s; }
+  .entry-row.expanded { background-color: var(--card-bg); border-bottom: none; }
+  .entry-row:last-child { border-bottom: none; }
+  
+  /* ICONS: Native Color */
+  .entry-icon { 
+    width: 36px; height: 36px; 
+    display: flex; align-items: center; justify-content: center; 
+    font-size: 24px; margin-right: 12px; flex-shrink: 0;
+    background: transparent;
+  }
+  /* Fallback colors if emojis fail */
+  .icon-charge { color: var(--success); }
+  .icon-fuel { color: var(--warning); }
+  .icon-waypoint { color: var(--primary); }
+  .icon-camp { color: #8B4513; }
+  
+  .entry-content { flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .entry-row-top { font-weight: 600; font-size: 16px; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .entry-row-bottom { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-secondary); }
+  .entry-meta-right { font-weight: 500; text-align: right; white-space: nowrap;}
+
+  .entry-detail-panel { background-color: var(--card-bg); padding: 0 16px 16px 16px; border-bottom: 1px solid var(--separator); animation: slideDown 0.2s ease-out; }
+  @keyframes slideDown { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+  
+  .detail-data-row { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px; }
+  .detail-label { color: var(--text-secondary); }
+  .detail-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .btn-action { flex: 1; padding: 10px; border-radius: 8px; border: none; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .btn-edit { background: var(--bg-color); color: var(--primary); border: 1px solid var(--border-color); }
+  .btn-delete { background: var(--danger); color: white; }
+
+  /* BOTTOM BAR */
+  .bottom-bar {
+    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+    width: 100%; max-width: 430px;
+    background: var(--card-bg);
+    backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    border-top: 0.5px solid var(--border-color);
+    display: flex; gap: 6px; z-index: 1000;
+    box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
+    padding: 10px 12px 15px 12px;
+  }
+  @media (display-mode: standalone) {
+    .bottom-bar { padding-bottom: calc(env(safe-area-inset-bottom) + 5px); }
+  }
+
+  .btn-main {
+    flex: 1; border: none; border-radius: 10px;
+    padding: 12px 2px;
+    font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    background: var(--primary); color: white;
+    min-width: 0; /* Allow buttons to shrink below content width */
+  }
+
+  /* Slightly larger buttons on wider screens */
+  @media (min-width: 375px) {
+    .bottom-bar { gap: 8px; padding: 10px 16px 15px 16px; }
+    .btn-main { padding: 12px 4px; font-size: 13px; }
+  }
+  
+  /* MODAL & INPUTS */
+  /* === Modal Button Style Upgrade (Unified iOS Buttons) === */
+  .modal-btn {
+	 padding: 14px;
+	 width: 100%;
+	 border-radius: 10px;
+	 font-size: 16px;
+	 font-weight: 600;
+	 border: 1px solid var(--border-color);
+	 background: var(--card-bg);
+	 color: var(--text-primary);
+	 text-align: center;
+  }
+  .modal-btn.primary {
+	 border: none;
+	 background: var(--primary);
+	 color: white;
+  }
+  .modal-btn.destructive {
+	 border: none;
+	 background: var(--danger);
+	 color: white;
+  }
+
+  .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 2000; display: none; opacity: 0; transition: opacity 0.2s; }
+  .modal-overlay.visible { display: block; opacity: 1; }
+  .modal-sheet { position: fixed; bottom: 0; left: 0; right: 0; background: var(--card-bg); border-radius: 20px 20px 0 0; padding: 20px 20px calc(var(--safe-bottom) + 20px) 20px; transform: translateY(100%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); z-index: 2001; max-height: 90vh; overflow-y: auto; }
+  .modal-sheet.visible { transform: translateY(0); }
+  .sheet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .sheet-title { font-size: 20px; font-weight: 700; }
+  .sheet-close { color: var(--primary); background: none; border: none; font-size: 17px; font-weight: 600; }
+  .input-group { margin-bottom: 16px; }
+  .input-label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; font-weight: 500; }
+  .ios-input-row { display: flex; gap: 8px; }
+  .ios-input { width: 100%; height: 44px; background: var(--bg-color); border: none; border-radius: 10px; padding: 0 12px; font-size: 17px; color: var(--text-primary); -webkit-appearance: none; }
+  .stepper { width: 44px; height: 44px; border-radius: 10px; border: none; background: var(--bg-color); color: var(--primary); font-size: 24px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  textarea.ios-input { height: 80px; padding-top: 10px; }
+  
+  /* GAUGES */
+  .gauge-wrap { margin-top: 10px; }
+  .gauge-info { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+  .gauge-track { height: 16px; background: var(--gauge-empty); border-radius: 8px; position: relative; overflow: hidden; }
+  .gauge-bar { height: 100%; opacity: 0.8; border-radius: 8px; position: absolute; top: 0; left: 0; }
+  .gauge-lines { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; }
+  .g-line { flex: 1; border-right: 1px solid rgba(255,255,255,0.6); }
+  .g-line:last-child { border-right: none; }
+  
+  .app-footer { text-align: center; padding: 20px; color: var(--text-secondary); font-size: 12px; opacity: 0.6; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <button class="header-btn" id="navLeftBtn" onclick="goBack()" style="display:none;">‹ Back</button>
+  <div class="header-title" id="headerTitle">Shark Trips</div>
+  <button class="header-btn icon" id="themeToggle">◑</button>
+</header>
+
+<div id="mainContent">
+  <div id="viewTrips" class="list-container">
+    <div id="tripListContainer"></div>
+    <div class="app-footer" onclick="showInstallGuide()">v10.0.20250122 • Copyright © 2025 Gordon Williams</div>
+    <div style="height: 20px;"></div>
+  </div>
+
+  <div id="viewDetail" class="list-container" style="display:none;">
+    <div class="detail-hero">
+      <h2 id="detailName">Trip Name</h2>
+      <p id="detailMeta">Date • Entries</p>
+    </div>
+    <div class="stats-grid-3" id="detailStats"></div>
+    <div id="entryListContainer" class="entry-group"></div>
+    <h3 style="font-size:17px; margin-left:10px; margin-bottom:10px;">Cost Breakdown</h3>
+    <div class="stats-grid" id="perfStats"></div>
+    <div id="campStatsSection" style="display:none;">
+      <h3 style="font-size:17px; margin-left:10px; margin-bottom:10px;">Camping</h3>
+      <div class="stats-grid" id="campStats"></div>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-bar" id="bottomBar"></div>
+<div class="modal-overlay" id="modalOverlay" onclick="hideModal()"></div>
+<div class="modal-sheet" id="modalSheet"></div>
+
+<script>
+// ===== CONFIG =====
+const PETROL_KWH_PER_LITRE = 9.7;   // Energy density for HEV equivalent calc
+const PETROL_CO2_PER_LITRE = 2.31;  // kg CO2 per litre of petrol burned (combustion only)
+const PETROL_UPSTREAM_FACTOR = 1.23; // Well-to-tank emissions (~23% extra for extraction, refining, transport)
+const DC_CHARGER_EFFICIENCY = 0.90; // ~10% losses in DC charging
+const DROPBOX_APP_KEY = '6kd93mvuuy9k4s3';
+const BACKUP_FILENAME = '/BYDSharkTrips.json';
+const SETTINGS_FILENAME = '/BYDSharkSettings.json';
+
+// Default vehicle specs (embedded in each trip for self-contained data)
+const DEFAULT_VEHICLE_SPECS = {
+  name: 'BYD Shark 6',
+  batteryCapacity: 29.58,
+  batteryDegradation: 0,    // % degradation (0 = new, 20 = 20% degraded)
+  fuelTankTotal: 60,
+  fuelTankReserve: 10,
+  engineEfficiency: 43,
+  maxFuelRangeKm: 700,
+  homeChargingCost: 0.32
+};
+
+const DEFAULT_SETTINGS = {
+  fuelPrices: { U91: 1.75, U95: 1.85, U98: 1.95 },
+  comparisonFuelType: 'U91',
+  comparisonL100km: 10,
+  comparisonMake: '',
+  comparisonModel: '',
+  vehicles: [{ ...DEFAULT_VEHICLE_SPECS }],
+  lastUsedVehicle: 'BYD Shark 6',
+  gridCarbonIntensity: 0.81,    // kg CO2 per kWh at generation (QLD default)
+  gridTransmissionEfficiency: 0.93,  // ~7% transmission losses (QLD default)
+  lastModified: 0
+};
+
+let trips = [];
+let currentTripId = null;
+let expandedEntryIndex = null;
+let editingEntryIndex = null;
+let dbx = null;
+let appSettings = { ...DEFAULT_SETTINGS };
+let isLocalMode = false;
+let currentFormVehicleSpecs = null;
+
+const safeStorage = {
+  getItem: (key) => { try { return localStorage.getItem(key); } catch(e) { return null; } },
+  setItem: (key, val) => { try { localStorage.setItem(key, val); } catch(e) { alert('Storage Error'); } },
+  removeItem: (key) => { try { localStorage.removeItem(key); } catch(e) {} }
+};
+
+function loadSettings() {
+  const saved = safeStorage.getItem('bydSharkSettings');
+  if (saved) {
+    try {
+      appSettings = { ...DEFAULT_SETTINGS, ...JSON.parse(saved) };
+      // Migration: ensure vehicles array exists
+      if (!appSettings.vehicles || appSettings.vehicles.length === 0) {
+        appSettings.vehicles = [{ ...DEFAULT_VEHICLE_SPECS }];
+        appSettings.lastUsedVehicle = DEFAULT_VEHICLE_SPECS.name;
+      }
+    } catch(e) {}
+  }
+}
+
+function saveSettings() {
+  appSettings.lastModified = Date.now();
+  safeStorage.setItem('bydSharkSettings', JSON.stringify(appSettings));
+}
+
+// Helper: Get vehicle specs from trip (self-contained) or fall back to defaults
+function getTripVehicleSpecs(trip) {
+  const v = trip?.vehicleSpecs;
+  if (!v) {
+    // Fallback for trips without embedded specs
+    const degradationFactor = 1 - (DEFAULT_VEHICLE_SPECS.batteryDegradation || 0) / 100;
+    return {
+      name: DEFAULT_VEHICLE_SPECS.name,
+      batteryCapacity: DEFAULT_VEHICLE_SPECS.batteryCapacity * degradationFactor,
+      batteryCapacityNew: DEFAULT_VEHICLE_SPECS.batteryCapacity,
+      batteryDegradation: DEFAULT_VEHICLE_SPECS.batteryDegradation || 0,
+      fuelTankUsable: DEFAULT_VEHICLE_SPECS.fuelTankTotal - DEFAULT_VEHICLE_SPECS.fuelTankReserve,
+      fuelTankTotal: DEFAULT_VEHICLE_SPECS.fuelTankTotal,
+      fuelTankReserve: DEFAULT_VEHICLE_SPECS.fuelTankReserve,
+      engineEfficiency: DEFAULT_VEHICLE_SPECS.engineEfficiency / 100,
+      maxFuelRangeKm: DEFAULT_VEHICLE_SPECS.maxFuelRangeKm,
+      homeChargingCost: DEFAULT_VEHICLE_SPECS.homeChargingCost,
+      isPureEV: DEFAULT_VEHICLE_SPECS.fuelTankTotal === 0
+    };
+  }
+  const degradationFactor = 1 - (v.batteryDegradation || 0) / 100;
+  return {
+    name: v.name,
+    batteryCapacity: v.batteryCapacity * degradationFactor,
+    batteryCapacityNew: v.batteryCapacity,
+    batteryDegradation: v.batteryDegradation || 0,
+    fuelTankUsable: v.fuelTankTotal - v.fuelTankReserve,
+    fuelTankTotal: v.fuelTankTotal,
+    fuelTankReserve: v.fuelTankReserve,
+    engineEfficiency: v.engineEfficiency / 100,
+    maxFuelRangeKm: v.maxFuelRangeKm || 700,
+    homeChargingCost: v.homeChargingCost,
+    isPureEV: v.fuelTankTotal === 0
+  };
+}
+
+// Helper: Get vehicle profile by name from settings
+function getVehicleProfile(vehicleName) {
+  return appSettings?.vehicles?.find(v => v.name === vehicleName);
+}
+
+// Helper: Get most recent fuel price from any trip's refuelling entries
+function getMostRecentFuelPrice() {
+  let mostRecent = null;
+  let mostRecentDate = null;
+
+  for (const trip of trips) {
+    for (const entry of (trip.entries || [])) {
+      if (entry.type === 'fuel' && entry.costPerLitre > 0) {
+        const entryDate = entry.date || trip.startDate;
+        if (!mostRecentDate || entryDate > mostRecentDate) {
+          mostRecentDate = entryDate;
+          mostRecent = entry.costPerLitre;
+        }
+      }
+    }
+  }
+  return mostRecent || appSettings?.fuelPrices?.[appSettings?.comparisonFuelType] || 1.80;
+}
+
+// Helper: Get specs for current context (current trip, form, or default)
+function getCurrentVehicleSpecs() {
+  if (currentTripId) {
+    const trip = trips.find(t => String(t.id) === String(currentTripId));
+    if (trip) return getTripVehicleSpecs(trip);
+  }
+  if (currentFormVehicleSpecs) return currentFormVehicleSpecs;
+  const lastUsed = getVehicleProfile(appSettings?.lastUsedVehicle);
+  if (lastUsed) return getTripVehicleSpecs({ vehicleSpecs: lastUsed });
+  return getTripVehicleSpecs(null);
+}
+
+// Migration: Add vehicleSpecs to trips that don't have them
+function migrateTrips() {
+  let migrated = false;
+  trips.forEach(trip => {
+    if (!trip.vehicleSpecs) {
+      trip.vehicleSpecs = { ...DEFAULT_VEHICLE_SPECS };
+      migrated = true;
+    }
+  });
+  if (migrated) {
+    safeStorage.setItem('bydSharkTrips', JSON.stringify(trips));
+  }
+}
+
+function checkLocalMode() {
+  const loc = window.location;
+  isLocalMode = loc.protocol === 'file:' || loc.hostname === 'localhost' || loc.hostname === '127.0.0.1';
+  if (isLocalMode) console.log('PHEV Trip Tracker - Local Mode');
+  return isLocalMode;
+}
+
+// ===== INITIALIZATION =====
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    initTheme();
+    loadTrips();
+    loadSettings();
+    migrateTrips();
+    checkLocalMode();
+    if (!isLocalMode) {
+      if (window.location.hash.includes('access_token=')) handleDropboxAuth(); else initDropbox();
+    }
+    renderTripsView();
+    document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+  } catch (e) { console.error(e); }
+});
+
+function initTheme() {
+  const saved = safeStorage.getItem('bydTheme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+}
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'light';
+  const newTheme = current === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', newTheme);
+  safeStorage.setItem('bydTheme', newTheme);
+}
+
+// ===== NAVIGATION =====
+function renderTripsView() {
+  currentTripId = null;
+  document.getElementById('viewTrips').style.display = 'block';
+  document.getElementById('viewDetail').style.display = 'none';
+  document.getElementById('navLeftBtn').style.display = 'none';
+  document.getElementById('headerTitle').textContent = 'My Trips';
+  
+  const bottomBar = document.getElementById('bottomBar');
+  bottomBar.innerHTML = `
+    <button class="btn-main btn-gray" onclick="showSyncMenu()">☁️ Sync</button>
+    <button class="btn-main btn-blue" onclick="showNewTripForm()">+ New Trip</button>
+  `;
+
+  const list = document.getElementById('tripListContainer');
+  const visibleTrips = trips.filter(t => !t.deleted);
+
+  if (!visibleTrips || visibleTrips.length === 0) {
+    list.innerHTML = `<div style="text-align:center; padding:40px; color:var(--text-secondary);">No trips yet.<br>Tap "+ New Trip" to start.</div>`;
+    return;
+  }
+
+  list.innerHTML = visibleTrips.map(t => {
+    const s = calculateTripSummary(t);
+    const specs = getTripVehicleSpecs(t);
+    // Trip cost using effective fuel cost (purchased if available, else consumed × reference price)
+    const tripCost = s.chargingCost + s.effectiveFuelCost;
+    const vehicleBadge = specs.name ? `<span style="font-size:10px; color:var(--text-secondary); margin-left:6px;">${escapeHtml(specs.name)}</span>` : '';
+    return `
+    <div class="ios-card trip-row" data-trip-id="${t.id}">
+      <div class="trip-main">
+        <div class="trip-title">${escapeHtml(t.name)}${vehicleBadge}</div>
+        <div class="trip-subtitle">${formatDate(t.startDate)} • ${t.entries.length} stops • ${s.distance.toFixed(0)}km</div>
+      </div>
+      <div class="trip-cost">$${tripCost.toFixed(0)}</div>
+      <div style="color:#C7C7CC; margin-left:10px;">›</div>
+    </div>`;
+  }).join('');
+
+  // Add click handlers using event delegation
+  list.querySelectorAll('.trip-row').forEach(card => {
+    card.onclick = () => openTrip(card.dataset.tripId);
+  });
+}
+
+function openTrip(id) {
+  currentTripId = id;
+  expandedEntryIndex = null;
+  document.getElementById('viewTrips').style.display = 'none';
+  document.getElementById('viewDetail').style.display = 'block';
+  document.getElementById('navLeftBtn').style.display = 'block';
+  document.getElementById('headerTitle').textContent = 'Trip Details';
+  
+  const bottomBar = document.getElementById('bottomBar');
+  bottomBar.innerHTML = `
+    <button class="btn-main btn-gray" onclick="showAddEntry('waypoint')">Stop</button>
+    <button class="btn-main btn-gray" onclick="showAddEntry('charging')">EV</button>
+    <button class="btn-main btn-gray" onclick="showAddEntry('fuel')">Fuel</button>
+    <button class="btn-main btn-gray" onclick="showAddEntry('camp')">Camp</button>
+    <button class="btn-main btn-gray" onclick="showTripActions()">...</button>
+  `;
+  renderTripDetails();
+}
+
+function goBack() { renderTripsView(); }
+
+function renderTripDetails() {
+  const trip = trips.find(t => String(t.id) === String(currentTripId));
+  if (!trip) return renderTripsView();
+
+  document.getElementById('detailName').textContent = trip.name;
+  document.getElementById('detailMeta').textContent = `Started ${formatDate(trip.startDate)}`;
+
+  const s = calculateTripSummary(trip);
+
+  // Trip total cost uses effectiveFuelCost (purchased if available, else consumed × reference price)
+  const tripTotalCost = s.chargingCost + s.effectiveFuelCost;
+
+  // For comparison vehicle, use settings price (hypothetical comparison)
+  const comparisonFuelPrice = appSettings.fuelPrices[appSettings.comparisonFuelType] || 1.80;
+  const eqLitres = s.distance * (appSettings.comparisonL100km / 100);
+  const eqPetrolCost = eqLitres * comparisonFuelPrice;
+  const savings = eqPetrolCost - tripTotalCost;
+
+  // Build comparison label
+  const vehicleName = [appSettings.comparisonMake, appSettings.comparisonModel].filter(Boolean).join(' ');
+  const compLabel = vehicleName || `${appSettings.comparisonFuelType} Equiv.`;
+
+  // HEV Equivalent: convert EV kWh to equivalent litres and add to fuel consumed
+  const fuelUsed = s.fuelConsumed > 0 ? s.fuelConsumed : s.totalFuel;
+  const evEquivLitres = s.totalEVEnergy / PETROL_KWH_PER_LITRE;
+  const hevEquivL100 = s.distance > 0 ? ((fuelUsed + evEquivLitres) / s.distance) * 100 : 0;
+
+  document.getElementById('detailStats').innerHTML = `
+    <div class="stat-box"><div class="stat-label">Distance</div><div class="stat-value">${s.distance.toFixed(1)}<span style="font-size:12px">km</span></div></div>
+    <div class="stat-box"><div class="stat-label">Total Cost</div><div class="stat-value">$${tripTotalCost.toFixed(2)}</div></div>
+    <div class="stat-box"><div class="stat-label">Fuel Econ</div><div class="stat-value">${s.fuelEconomy.toFixed(1)}<span style="font-size:12px">L/100</span></div></div>
+    <div class="stat-box"><div class="stat-label">HEV Equiv</div><div class="stat-value">${hevEquivL100.toFixed(1)}<span style="font-size:12px">L/100</span></div></div>
+    <div class="stat-box"><div class="stat-label">EV Used</div><div class="stat-value">${s.totalEVEnergy.toFixed(1)}<span style="font-size:12px">kWh</span></div></div>
+    <div class="stat-box"><div class="stat-label">EV Efficiency</div><div class="stat-value">${s.evEfficiency.toFixed(0)}<span style="font-size:12px">Wh/km</span></div></div>
+  `;
+
+  // Fuel cost info - purchased if available, else consumed with reference price
+  const fuelCostDetail = s.totalFuel > 0
+    ? `${s.totalFuel.toFixed(1)}L purchased`
+    : `${s.fuelConsumed.toFixed(1)}L @ $${s.referenceFuelPrice.toFixed(2)}`;
+
+  document.getElementById('perfStats').innerHTML = `
+    <div class="stat-box"><div class="stat-label">EV Cost</div><div class="stat-value">$${s.chargingCost.toFixed(2)}</div></div>
+    <div class="stat-box"><div class="stat-label">Fuel Cost</div><div class="stat-value">$${s.effectiveFuelCost.toFixed(2)}</div><div style="font-size:10px; color:var(--text-secondary);">${fuelCostDetail}</div></div>
+    <div class="stat-box"><div class="stat-label">vs ${escapeHtml(compLabel)}</div><div class="stat-value">$${eqPetrolCost.toFixed(2)}</div><div style="font-size:10px; color:var(--text-secondary);">${eqLitres.toFixed(1)}L</div></div>
+    <div class="stat-box" style="background:${savings > 0 ? 'rgba(52,199,89,0.15)' : 'var(--card-bg)'};"><div class="stat-label">Savings</div><div class="stat-value" style="color:${savings > 0 ? 'var(--success)' : 'var(--text-primary)'};">${savings >= 0 ? '+' : ''}$${savings.toFixed(2)}</div></div>
+  `;
+
+  // Show camping stats if there's any camping consumption
+  const campSection = document.getElementById('campStatsSection');
+  if (s.campEV > 0 || s.campFuel > 0) {
+    const campFuelCost = s.campFuel * s.referenceFuelPrice;
+    campSection.style.display = 'block';
+    document.getElementById('campStats').innerHTML = `
+      <div class="stat-box"><div class="stat-label">PTL Used</div><div class="stat-value">${s.campEV.toFixed(1)}<span style="font-size:12px">kWh</span></div></div>
+      <div class="stat-box"><div class="stat-label">ICE Recharge</div><div class="stat-value">${s.campFuel.toFixed(1)}<span style="font-size:12px">L</span></div><div style="font-size:10px; color:var(--text-secondary);">~$${campFuelCost.toFixed(2)}</div></div>
+    `;
+  } else {
+    campSection.style.display = 'none';
+  }
+
+  const list = document.getElementById('entryListContainer');
+  if (trip.entries.length === 0) {
+    list.innerHTML = `<div style="padding:20px; text-align:center; color:var(--text-secondary);">No entries yet.</div>`;
+    return;
+  }
+
+  const sorted = trip.entries.map((e,i)=>({e, i})).sort((a,b) => (a.e.odometer||0) - (b.e.odometer||0));
+  const specs = getTripVehicleSpecs(trip);
+
+  let prevSOC = null;
+
+  list.innerHTML = sorted.map((item, sortIdx) => {
+    const isExpanded = (sortIdx === expandedEntryIndex);
+    const entry = item.e;
+    const idx = item.i;
+
+    let iconClass = 'icon-waypoint', iconChar = '📍';
+    if(entry.type === 'charging') { iconClass = 'icon-charge'; iconChar = '⚡'; }
+    if(entry.type === 'fuel') { iconClass = 'icon-fuel'; iconChar = '⛽'; }
+    if(entry.type === 'camp') { iconClass = 'icon-camp'; iconChar = '🏕️'; }
+
+    let qtyStr = '';
+    let subInfo = '';
+    let currentSOC = null;
+	 let socDiff = null;
+
+	 if (entry.type === 'waypoint') {
+		  currentSOC = entry.arrivalSOC !== undefined ? entry.arrivalSOC : entry.startSOC;
+
+		  if (currentSOC !== undefined && currentSOC !== null && prevSOC !== null) {
+				socDiff = prevSOC - currentSOC;
+				if (socDiff > 0) {
+					 subInfo += ` • <span style="color:var(--text-secondary);">EV -${socDiff}%</span>`;
+				}
+		  }
+
+		  if (currentSOC !== null && currentSOC !== undefined) {
+				prevSOC = currentSOC;
+		  }
+
+	 } else if (entry.type === 'charging') {
+		  // Charging entries should never display EV -X%
+		  if (entry.endSOC !== undefined) {
+				prevSOC = entry.endSOC;
+		  }
+
+	 } else {
+		  // Fuel or other non-EV entries shouldn't change SOC drop logic
+		  if (currentSOC !== null && currentSOC !== undefined) {
+				prevSOC = currentSOC;
+		  }
+	 }
+
+    if(entry.type === 'fuel' && entry.litres) qtyStr = `${entry.litres}L`;
+    if(entry.type === 'charging') {
+        let k = entry.kwhDelivered;
+        if(!k && entry.endSOC && entry.startSOC) k = (entry.endSOC - entry.startSOC)/100 * specs.batteryCapacity;
+        if(k && k > 0) qtyStr = `${k.toFixed(1)}kWh`;
+    }
+    if(entry.type === 'camp') {
+        // Show PTL usage (SOC consumed) or ICE recharge info
+        if(entry.startSOC !== undefined && entry.endSOC !== undefined) {
+            const socDelta = entry.endSOC - entry.startSOC;
+            if(socDelta < 0) {
+                // PTL usage (battery drained)
+                const kwhUsed = Math.abs(socDelta) / 100 * specs.batteryCapacity;
+                qtyStr = `-${kwhUsed.toFixed(1)}kWh`;
+            } else if(socDelta > 0 && entry.usedICE) {
+                // ICE recharge
+                const kwhGained = socDelta / 100 * specs.batteryCapacity;
+                qtyStr = `+${kwhGained.toFixed(1)}kWh`;
+            }
+        }
+    }
+
+    let summaryHtml = `
+      <div class="entry-row ${isExpanded?'expanded':''}" onclick="toggleAccordion(${sortIdx})">
+        <div class="entry-icon ${iconClass}">${iconChar}</div>
+        <div class="entry-content">
+          <div class="entry-row-top">${escapeHtml(entry.location || entry.name)}</div>
+          <div class="entry-row-bottom">
+             <div>${formatDate(entry.date)}${subInfo}</div>
+             <div class="entry-meta-right">${qtyStr ? qtyStr + ' • ' : ''}${entry.odometer.toFixed(0)} km</div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    if (isExpanded) {
+      summaryHtml += `
+        <div class="entry-detail-panel">
+          ${generateDetailContent(entry, sortIdx, specs)}
+          <div class="detail-actions">
+             <button class="btn-action btn-edit" onclick="editEntry(${idx})">Edit</button>
+             <button class="btn-action btn-delete" onclick="deleteEntry(${idx})">Delete</button>
+          </div>
+        </div>
+      `;
+    }
+    return summaryHtml;
+  }).join('');
+}
+
+function toggleAccordion(idx) {
+  expandedEntryIndex = (expandedEntryIndex === idx) ? null : idx;
+  renderTripDetails();
+}
+
+function generateDetailContent(e, index, specs) {
+  let html = '';
+  let arrivalHtml = '';
+
+  // Labels adapt based on if it is the first entry
+  let isStart = (index === 0 || e.name === 'Trip Start');
+  let battLabel = isStart ? "Starting Battery" : "Arrival Battery";
+  let fuelLabel = isStart ? "Starting Fuel" : "Arrival Fuel";
+
+  let displaySOC = e.arrivalSOC;
+  if (displaySOC === undefined && e.type === 'charging' && e.startSOC !== undefined) {
+      displaySOC = e.startSOC;
+  }
+
+  if (displaySOC !== undefined) {
+     arrivalHtml += `<div class="detail-data-row"><span class="detail-label">${battLabel}</span><span>${displaySOC}%</span></div>`;
+  }
+  if (e.arrivalFuelPct !== undefined) {
+      arrivalHtml += `<div class="detail-data-row"><span class="detail-label">${fuelLabel}</span><span>${e.arrivalFuelPct}%</span></div>`;
+  }
+
+  if(arrivalHtml) {
+      html += `<div style="border-bottom:1px dashed var(--separator); padding-bottom:8px; margin-bottom:8px;">${arrivalHtml}</div>`;
+  }
+
+  if (e.type === 'charging') {
+    const kwhValue = e.kwhDelivered || ((e.endSOC - e.startSOC) / 100 * specs.batteryCapacity);
+    const cost = kwhValue * e.costPerKWh;
+    const socRange = e.endSOC - e.startSOC;
+    html += `
+      <div class="gauge-wrap">
+        <div class="gauge-info"><span>${e.startSOC}% → ${e.endSOC}%</span><span>+${socRange}%</span></div>
+        <div class="gauge-track">
+          <div class="gauge-lines">${Array(9).fill('<div class="g-line"></div>').join('')}</div>
+          <div class="gauge-bar" style="left:${e.startSOC}%; width:${socRange}%; background-color:var(--success);"></div>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="detail-data-row"><span class="detail-label">Vendor</span><span>${escapeHtml(e.vendor)}</span></div>
+        <div class="detail-data-row"><span class="detail-label">Delivered</span><span>${kwhValue.toFixed(2)} kWh</span></div>
+        <div class="detail-data-row"><span class="detail-label">Cost</span><span>$${cost.toFixed(2)} (@ $${e.costPerKWh})</span></div>
+      </div>`;
+  } else if (e.type === 'fuel') {
+    const cost = e.litres * e.costPerLitre;
+    const tankPct = (e.litres / specs.fuelTankUsable) * 100;
+    html += `
+      <div class="gauge-wrap">
+        <div class="gauge-info"><span>Added Fuel ${e.isFull ? '(Full)' : ''}</span><span>${e.litres} L</span></div>
+        <div class="gauge-track">
+           <div class="gauge-lines">${Array(9).fill('<div class="g-line"></div>').join('')}</div>
+           <div class="gauge-bar" style="width:${Math.min(tankPct,100)}%; background-color:var(--warning);"></div>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="detail-data-row"><span class="detail-label">Type</span><span>${e.fuelType}</span></div>
+        <div class="detail-data-row"><span class="detail-label">Cost</span><span>$${cost.toFixed(2)} (@ $${e.costPerLitre})</span></div>
+      </div>`;
+  } else if (e.type === 'camp') {
+    // Camp entry - show PTL usage and optional ICE recharge
+    if(e.startSOC !== undefined && e.endSOC !== undefined) {
+      const socDelta = e.endSOC - e.startSOC;
+      const kwhDelta = Math.abs(socDelta) / 100 * specs.batteryCapacity;
+      const isPTLUsage = socDelta < 0;
+      const isICERecharge = socDelta > 0 && e.usedICE;
+
+      let gaugeLabel = isPTLUsage ? 'PTL Usage' : (isICERecharge ? 'ICE Recharge' : 'Battery');
+      let gaugeColor = isPTLUsage ? 'var(--danger)' : 'var(--success)';
+      let gaugeStart = isPTLUsage ? e.endSOC : e.startSOC;
+      let gaugeWidth = Math.abs(socDelta);
+
+      html += `
+        <div class="gauge-wrap">
+          <div class="gauge-info"><span>${gaugeLabel}: ${e.startSOC}% → ${e.endSOC}%</span><span>${isPTLUsage?'-':'+'}${kwhDelta.toFixed(1)} kWh</span></div>
+          <div class="gauge-track">
+             <div class="gauge-lines">${Array(9).fill('<div class="g-line"></div>').join('')}</div>
+             <div class="gauge-bar" style="left:${gaugeStart}%; width:${gaugeWidth}%; background-color:${gaugeColor};"></div>
+          </div>
+        </div>`;
+    }
+
+    if(e.usedICE && e.startFuelPct !== undefined && e.endFuelPct !== undefined) {
+      const fuelDelta = e.startFuelPct - e.endFuelPct;
+      const litresUsed = fuelDelta / 100 * specs.fuelTankUsable;
+      html += `
+        <div class="gauge-wrap" style="margin-top:12px;">
+          <div class="gauge-info"><span>Fuel Used (ICE): ${e.startFuelPct}% → ${e.endFuelPct}%</span><span>-${litresUsed.toFixed(1)} L</span></div>
+          <div class="gauge-track">
+             <div class="gauge-lines">${Array(9).fill('<div class="g-line"></div>').join('')}</div>
+             <div class="gauge-bar" style="left:${e.endFuelPct}%; width:${fuelDelta}%; background-color:var(--warning);"></div>
+          </div>
+        </div>`;
+    }
+
+    html += `<div style="margin-top:12px;">`;
+    if(e.usedICE) html += `<div class="detail-data-row"><span class="detail-label">ICE Used</span><span>Yes (Stationary Recharge)</span></div>`;
+    html += `</div>`;
+  }
+
+  if (e.notes) html += `<div style="margin-top:8px; color:var(--text-secondary); font-style:italic;">"${escapeHtml(e.notes)}"</div>`;
+
+  return html;
+}
+
+// ===== UTILS & FORMS =====
+function showModal(contentHtml) {
+  const sheet = document.getElementById('modalSheet');
+  const overlay = document.getElementById('modalOverlay');
+  sheet.innerHTML = contentHtml;
+  overlay.classList.add('visible');
+  setTimeout(() => sheet.classList.add('visible'), 10);
+}
+function hideModal() {
+  const sheet = document.getElementById('modalSheet');
+  const overlay = document.getElementById('modalOverlay');
+  sheet.classList.remove('visible');
+  setTimeout(() => overlay.classList.remove('visible'), 300);
+}
+function escapeHtml(str) {
+  return (str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function sanitizeForCsv(value) {
+  const s = value == null ? '' : String(value);
+  if (!s) return '';
+  // Prevent Excel/Sheets from treating it as a formula
+  if (/^[=+\-@]/.test(s)) {
+    return "'" + s;
+  }
+  return s;
+}
+
+function formatDate(d) {
+  return new Date(d).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric'
+  });
+}
+
+window.syncFuel = function(mode, idKm, idPct) {
+    const specs = getCurrentVehicleSpecs();
+    const maxRange = specs.maxFuelRangeKm || 700;
+    const kmEl = document.getElementById(idKm);
+    const pctEl = document.getElementById(idPct);
+    if(mode === 'km') {
+        const val = parseFloat(kmEl.value);
+        if(!isNaN(val)) pctEl.value = ((val / maxRange) * 100).toFixed(0);
+        else pctEl.value = '';
+    } else {
+        const val = parseFloat(pctEl.value);
+        if(!isNaN(val)) kmEl.value = ((val / 100) * maxRange).toFixed(0);
+        else kmEl.value = '';
+    }
+}
+
+function stepVal(id, d) { const el = document.getElementById(id); let v = parseFloat(el.value) || 0; el.value = (v + d).toFixed(id.includes('cost')||id.includes('price') ? 2 : 1); el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); }
+function toggleCampFuel() { const section = document.getElementById('campFuelSection'); const cb = document.getElementById('f_usedICE'); if(section) section.style.display = cb && cb.checked ? 'block' : 'none'; }
+function calcKwh() { const specs = getCurrentVehicleSpecs(); const s = parseFloat(document.getElementById('f_soc1').value)||0; const e = parseFloat(document.getElementById('f_soc2').value)||0; const f = document.getElementById('f_kwh'); if (e > s) { f.value = ((e-s)/100 * specs.batteryCapacity).toFixed(2); } }
+
+async function geoLoc(id, btn) {
+    if(!navigator.geolocation) return alert('GPS not supported');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳';
+    try {
+        const pos = await new Promise((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, {timeout: 10000}));
+        
+        const latInput = document.getElementById('f_lat');
+        const lonInput = document.getElementById('f_lon');
+        if(latInput) latInput.value = pos.coords.latitude;
+        if(lonInput) lonInput.value = pos.coords.longitude;
+
+        const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${pos.coords.latitude}&lon=${pos.coords.longitude}`, {
+			 headers: {
+				'User-Agent': 'BYD-Shark-TripTracker/7.4 (Gordon Williams)',
+				'Accept-Language': 'en-AU'
+			 }
+		  });
+        const data = await res.json();
+        let locStr = data.address.road || '';
+        if(data.address.suburb || data.address.city) locStr += (locStr ? ', ' : '') + (data.address.suburb || data.address.city);
+        if(!locStr) locStr = data.display_name.split(',')[0];
+        document.getElementById(id).value = locStr;
+    } catch(e) { alert('GPS Error: ' + e.message); }
+    btn.innerHTML = originalText;
+}
+
+function showNewTripForm() {
+  const today = new Date().toISOString().split('T')[0];
+  const vehicleOptions = (appSettings.vehicles || []).map(v =>
+    `<option value="${escapeHtml(v.name)}" ${v.name === appSettings.lastUsedVehicle ? 'selected' : ''}>${escapeHtml(v.name)}</option>`
+  ).join('');
+  const selectedVehicle = getVehicleProfile(appSettings.lastUsedVehicle) || appSettings.vehicles?.[0];
+  const isPureEV = selectedVehicle?.fuelTankTotal === 0;
+
+  showModal(`
+    <div class="sheet-header"><div class="sheet-title">New Trip</div><button class="sheet-close" onclick="hideModal()">Cancel</button></div>
+    <form id="formNewTrip">
+      <div class="input-group"><label class="input-label">Trip Name</label><input type="text" class="ios-input" id="tripName" required placeholder="e.g. Weekend Getaway"></div>
+      <div class="input-group"><label class="input-label">Start Date</label><input type="date" class="ios-input" id="startDate" value="${today}" required></div>
+      <div class="input-group"><label class="input-label">Vehicle</label>
+        <select class="ios-input" id="tripVehicle" onchange="updateNewTripFuelFields()">${vehicleOptions}</select>
+      </div>
+      <div class="input-group"><label class="input-label">Starting Odometer (km)</label>
+        <div class="ios-input-row"><button type="button" class="stepper" onclick="stepVal('startOdo', -10)">-</button><input type="number" class="ios-input" id="startOdo" step="0.1" required placeholder="0.0"><button type="button" class="stepper" onclick="stepVal('startOdo', 10)">+</button></div>
+      </div>
+      <div class="input-group"><label class="input-label">Departure Battery %</label><div class="ios-input-row"><button type="button" class="stepper" onclick="stepVal('startSoc', -5)">-</button><input type="number" class="ios-input" id="startSoc" value="100" required><button type="button" class="stepper" onclick="stepVal('startSoc', 5)">+</button></div></div>
+
+      <div class="input-group" id="fuelFieldGroup" style="${isPureEV ? 'display:none;' : ''}">
+         <label class="input-label">Starting Fuel Level</label>
+         <div class="ios-input-row" style="gap:10px;">
+             <div style="flex:1"><label class="input-label" style="font-size:11px; margin-bottom:2px;">Range (km)</label><input type="number" class="ios-input" id="startFuelKm" placeholder="700" oninput="syncFuel('km', 'startFuelKm', 'startFuelPct')"></div>
+             <div style="flex:1"><label class="input-label" style="font-size:11px; margin-bottom:2px;">Fuel %</label><input type="number" class="ios-input" id="startFuelPct" placeholder="100" oninput="syncFuel('pct', 'startFuelKm', 'startFuelPct')"></div>
+         </div>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%; margin-top:10px; background:var(--primary); color:white; padding:12px; border-radius:10px; border:none; font-weight:bold;">Start Trip</button>
+    </form>
+  `);
+  document.getElementById('formNewTrip').onsubmit = (e) => {
+    e.preventDefault();
+    const vehicleName = document.getElementById('tripVehicle').value;
+    const vehicleProfile = getVehicleProfile(vehicleName) || { ...DEFAULT_VEHICLE_SPECS };
+    const trip = {
+      id: Date.now().toString(),
+      name: document.getElementById('tripName').value,
+      startDate: document.getElementById('startDate').value,
+      vehicleSpecs: { ...vehicleProfile },
+      referenceFuelPrice: getMostRecentFuelPrice(),  // Auto-set from most recent fuel entry
+      entries: [{
+          type: 'waypoint', date: document.getElementById('startDate').value, odometer: parseFloat(document.getElementById('startOdo').value), name: 'Trip Start', notes: 'Start',
+          arrivalSOC: parseFloat(document.getElementById('startSoc').value), arrivalFuelPct: parseFloat(document.getElementById('startFuelPct').value) || 100
+      }]
+    };
+    // Update last used vehicle
+    appSettings.lastUsedVehicle = vehicleName;
+    saveSettings();
+    saveTrip(trip); hideModal(); openTrip(trip.id);
+  };
+}
+
+function updateNewTripFuelFields() {
+  const vehicleName = document.getElementById('tripVehicle')?.value;
+  const vehicle = getVehicleProfile(vehicleName);
+  const fuelGroup = document.getElementById('fuelFieldGroup');
+  if (fuelGroup && vehicle) {
+    fuelGroup.style.display = vehicle.fuelTankTotal === 0 ? 'none' : '';
+  }
+}
+
+function showAddEntry(type) {
+  editingEntryIndex = null;
+  const trip = trips.find(t => String(t.id) === String(currentTripId));
+  const lastOdo = (trip.entries.length > 0) ? Math.max(...trip.entries.map(e=>e.odometer||0)) : 0;
+  renderEntryForm(type, { date: new Date().toISOString().split('T')[0], odometer: lastOdo }, false);
+}
+function editEntry(index) {
+  const trip = trips.find(t => String(t.id) === String(currentTripId));
+  editingEntryIndex = index;
+  renderEntryForm(trip.entries[index].type, trip.entries[index], true);
+}
+
+function renderEntryForm(type, data, isEdit) {
+  const specs = getCurrentVehicleSpecs();
+  let arrivalSection = '';
+  let gpsHidden = `<input type="hidden" id="f_lat" value="${data.gps?data.gps.lat:''}"><input type="hidden" id="f_lon" value="${data.gps?data.gps.lon:''}">`;
+  let notesField = `<div class="input-group"><label class="input-label">Notes</label><textarea class="ios-input" id="f_notes">${escapeHtml(data.notes || '')}</textarea></div>`;
+
+  // UPDATED: Dynamic Labels logic for "Trip Start" editing
+  let isStart = (data.name === 'Trip Start');
+  let battLabel = isStart ? "Starting Battery %" : "Arrival Battery %";
+  let fuelLabel = isStart ? "Starting Fuel Level" : "Arrival Fuel Level";
+  const maxFuelRange = specs.maxFuelRangeKm || 700;
+
+  // Support both arrivalFuelPct and fuelLevelPct (legacy field name from new trip form)
+  const fuelPctValue = data.arrivalFuelPct ?? data.fuelLevelPct ?? null;
+  let fuelLevelHtml = `<div class="input-group"><label class="input-label">${fuelLabel}</label><div class="ios-input-row" style="gap:10px;"><div style="flex:1"><label class="input-label" style="font-size:11px; margin-bottom:2px;">Range (km)</label><input type="number" class="ios-input" id="f_fuelKm" value="${fuelPctValue?((fuelPctValue/100)*maxFuelRange).toFixed(0):''}" oninput="syncFuel('km', 'f_fuelKm', 'f_fuelPct')"></div><div style="flex:1"><label class="input-label" style="font-size:11px; margin-bottom:2px;">Fuel %</label><input type="number" class="ios-input" id="f_fuelPct" value="${fuelPctValue||''}" oninput="syncFuel('pct', 'f_fuelKm', 'f_fuelPct')"></div></div></div>`;
+  
+  if (type === 'waypoint') arrivalSection = `<div class="input-group"><label class="input-label">${battLabel}</label><div class="ios-input-row"><button type="button" class="stepper" onclick="stepVal('f_arrSoc', -5)">-</button><input type="number" class="ios-input" id="f_arrSoc" value="${data.arrivalSOC!==undefined?data.arrivalSOC:''}"><button type="button" class="stepper" onclick="stepVal('f_arrSoc', 5)">+</button></div></div>${fuelLevelHtml}`;
+  else if (type === 'fuel') arrivalSection = fuelLevelHtml;
+
+  let fields = `${gpsHidden}<div class="input-group"><label class="input-label">Date</label><input type="date" class="ios-input" id="f_date" value="${data.date}" required></div><div class="input-group"><label class="input-label">Odometer (km)</label><div class="ios-input-row"><button type="button" class="stepper" onclick="stepVal('f_odo', -10)">-</button><input type="number" class="ios-input" id="f_odo" value="${data.odometer}" step="0.1" required><button type="button" class="stepper" onclick="stepVal('f_odo', 10)">+</button></div></div>${arrivalSection}`;
+  let title = (isEdit?'Edit ':'Add ') + (type==='waypoint'?'Waypoint':(type==='charging'?'Charge':(type==='camp'?'Camp':'Fuel')));
+
+  if (type === 'waypoint') fields = `<div class="input-group"><label class="input-label">Name / Location</label><div class="ios-input-row"><input type="text" class="ios-input" id="f_loc" value="${escapeHtml(data.name || '')}" required><button type="button" class="stepper" onclick="geoLoc('f_loc', this)">📍</button></div></div>` + fields + notesField;
+  else if (type === 'charging') fields = `<div class="input-group"><label class="input-label">Location</label><div class="ios-input-row"><input type="text" class="ios-input" id="f_loc" value="${escapeHtml(data.location || '')}" required><button type="button" class="stepper" onclick="geoLoc('f_loc', this)">📍</button></div></div><div class="input-group"><label class="input-label">Vendor</label><select class="ios-input" id="f_vendor">${['Chargefox','Evie','NRMA','Ampol','BP Pulse','Tesla','Other'].map(v => `<option ${data.vendor===v?'selected':''}>${v}</option>`).join('')}</select></div>` + fields + `<div class="ios-input-row" style="margin-bottom:16px;"><div style="flex:1"><label class="input-label">Start %</label><input type="number" class="ios-input" id="f_soc1" value="${data.startSOC||20}" onchange="calcKwh()"></div><div style="flex:1"><label class="input-label">End %</label><input type="number" class="ios-input" id="f_soc2" value="${data.endSOC||80}" onchange="calcKwh()"></div></div><div class="input-group"><label class="input-label">kWh Delivered</label><input type="number" class="ios-input" id="f_kwh" value="${data.kwhDelivered||''}" step="0.01"></div><div class="input-group"><label class="input-label">Cost per kWh ($)</label><div class="ios-input-row"><button type="button" class="stepper" onclick="stepVal('f_cost', -0.05)">-</button><input type="number" class="ios-input" id="f_cost" value="${data.costPerKWh||0.60}" step="0.01"><button type="button" class="stepper" onclick="stepVal('f_cost', 0.05)">+</button></div></div>` + notesField;
+  else if (type === 'fuel') fields = `<div class="input-group"><label class="input-label">Location</label><div class="ios-input-row"><input type="text" class="ios-input" id="f_loc" value="${escapeHtml(data.location || '')}" required><button type="button" class="stepper" onclick="geoLoc('f_loc', this)">📍</button></div></div><div class="input-group"><label class="input-label">Arrival Battery %</label><div class="ios-input-row"><button type="button" class="stepper" onclick="stepVal('f_arrSoc', -5)">-</button><input type="number" class="ios-input" id="f_arrSoc" value="${data.arrivalSOC!==undefined?data.arrivalSOC:''}"><button type="button" class="stepper" onclick="stepVal('f_arrSoc', 5)">+</button></div></div><div class="input-group"><label class="input-label">Fuel Type</label><select class="ios-input" id="f_ftype">${['Unleaded 91','Unleaded 95','Unleaded 98','E10','Diesel'].map(v => `<option ${data.fuelType===v?'selected':''}>${v}</option>`).join('')}</select></div>` + fields + `<div class="input-group"><label class="input-label">Litres Added</label><input type="number" class="ios-input" id="f_litres" value="${data.litres||''}" step="0.01" required></div><div class="input-group" style="display:flex; align-items:center; gap:10px; margin-bottom:16px;"><input type="checkbox" id="f_isFull" style="width:24px; height:24px;" ${data.isFull ? 'checked' : ''}><label for="f_isFull" style="font-size:17px;">Tank Filled to Full?</label></div><div class="input-group"><label class="input-label">Price per Litre ($)</label><div class="ios-input-row"><button type="button" class="stepper" onclick="stepVal('f_price', -0.05)">-</button><input type="number" class="ios-input" id="f_price" value="${data.costPerLitre||2.00}" step="0.01" required><button type="button" class="stepper" onclick="stepVal('f_price', 0.05)">+</button></div></div>` + notesField;
+  else if (type === 'camp') fields = `<div class="input-group"><label class="input-label">Camp Location</label><div class="ios-input-row"><input type="text" class="ios-input" id="f_loc" value="${escapeHtml(data.location || '')}" required><button type="button" class="stepper" onclick="geoLoc('f_loc', this)">📍</button></div></div>` + fields + `<div style="background:var(--bg-color); padding:12px; border-radius:10px; margin-bottom:16px;"><div style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">Battery (PTL Usage)</div><div class="ios-input-row"><div style="flex:1"><label class="input-label">Start %</label><input type="number" class="ios-input" id="f_soc1" value="${data.startSOC!==undefined?data.startSOC:''}"></div><div style="flex:1"><label class="input-label">End %</label><input type="number" class="ios-input" id="f_soc2" value="${data.endSOC!==undefined?data.endSOC:''}"></div></div></div><div class="input-group" style="display:flex; align-items:center; gap:10px; margin-bottom:16px;"><input type="checkbox" id="f_usedICE" style="width:24px; height:24px;" ${data.usedICE ? 'checked' : ''} onchange="toggleCampFuel()"><label for="f_usedICE" style="font-size:17px;">Used ICE to recharge?</label></div><div id="campFuelSection" style="display:${data.usedICE?'block':'none'}; background:var(--bg-color); padding:12px; border-radius:10px; margin-bottom:16px;"><div style="font-size:13px; color:var(--text-secondary); margin-bottom:8px;">Fuel Level (ICE Recharge)</div><div class="ios-input-row"><div style="flex:1"><label class="input-label">Start %</label><input type="number" class="ios-input" id="f_fuelStart" value="${data.startFuelPct!==undefined?data.startFuelPct:''}"></div><div style="flex:1"><label class="input-label">End %</label><input type="number" class="ios-input" id="f_fuelEnd" value="${data.endFuelPct!==undefined?data.endFuelPct:''}"></div></div></div>` + notesField;
+
+  showModal(`<div class="sheet-header">
+  <div class="sheet-title">${title}</div>
+  <button class="sheet-close" onclick="hideModal()">Cancel</button></div>
+  <form id="formEntry">${fields}
+	 <button type="submit" class="btn btn-primary" 
+		style="width:100%;
+		font-size:17px; 
+		margin-top:10px; 
+		background:var(--primary); 
+		color:white; 
+		padding:12px; 
+		border-radius:10px; 
+		border:none; 
+		font-weight:bold;">
+		  Save
+		</button>
+	 </form>`);
+
+  document.getElementById('formEntry').onsubmit = (e) => {
+    e.preventDefault();
+    const trip = trips.find(t => String(t.id) === String(currentTripId));
+    const tripSpecs = getTripVehicleSpecs(trip);
+    const entry = { type: type, date: document.getElementById('f_date').value, odometer: parseFloat(document.getElementById('f_odo').value), notes: document.getElementById('f_notes').value };
+    const lat = document.getElementById('f_lat').value, lon = document.getElementById('f_lon').value;
+    if(lat && lon) entry.gps = { lat: parseFloat(lat), lon: parseFloat(lon) };
+    const arrSocVal = document.getElementById('f_arrSoc') ? parseFloat(document.getElementById('f_arrSoc').value) : undefined;
+    const arrFuelVal = document.getElementById('f_fuelPct') ? parseFloat(document.getElementById('f_fuelPct').value) : undefined;
+
+    if (type === 'waypoint') {
+	 const locVal = document.getElementById('f_loc').value.trim();
+	 if (locVal) entry.name = locVal;
+	 // Only save values if they're valid numbers (don't overwrite with NaN)
+	 if (typeof arrSocVal === 'number' && !isNaN(arrSocVal)) entry.arrivalSOC = arrSocVal;
+	 if (typeof arrFuelVal === 'number' && !isNaN(arrFuelVal)) entry.arrivalFuelPct = arrFuelVal;
+	 }
+    else if (type === 'charging') {
+		entry.location = document.getElementById('f_loc').value;
+		entry.vendor = document.getElementById('f_vendor').value;
+		entry.startSOC = parseFloat(document.getElementById('f_soc1').value);
+		entry.endSOC = parseFloat(document.getElementById('f_soc2').value);
+		entry.kwhDelivered = parseFloat(document.getElementById('f_kwh').value);
+		entry.costPerKWh = parseFloat(document.getElementById('f_cost').value);
+		}
+
+    else if (type === 'fuel') {
+		entry.location = document.getElementById('f_loc').value;
+		entry.fuelType = document.getElementById('f_ftype').value;
+		entry.litres = parseFloat(document.getElementById('f_litres').value);
+		entry.costPerLitre = parseFloat(document.getElementById('f_price').value);
+		entry.isFull = document.getElementById('f_isFull').checked;
+		// Save arrival SOC if provided (for EV tracking continuity)
+		if (typeof arrSocVal === 'number' && !isNaN(arrSocVal)) entry.arrivalSOC = arrSocVal;
+		// Only save arrivalFuelPct if it's a valid number
+		if (typeof arrFuelVal === 'number' && !isNaN(arrFuelVal)) entry.arrivalFuelPct = arrFuelVal;
+		if(entry.isFull) entry.departFuelPct = 100;
+		else if(entry.arrivalFuelPct !== undefined && entry.litres) {
+		  let addedPct = (entry.litres / tripSpecs.fuelTankUsable) * 100;
+		  entry.departFuelPct = Math.min(100,
+		  entry.arrivalFuelPct + addedPct);
+		  }
+		}
+    else if (type === 'camp') {
+		entry.location = document.getElementById('f_loc').value;
+		const soc1 = document.getElementById('f_soc1');
+		const soc2 = document.getElementById('f_soc2');
+		if(soc1 && soc1.value) entry.startSOC = parseFloat(soc1.value);
+		if(soc2 && soc2.value) entry.endSOC = parseFloat(soc2.value);
+		entry.usedICE = document.getElementById('f_usedICE') ? document.getElementById('f_usedICE').checked : false;
+		if(entry.usedICE) {
+		  const fuelStart = document.getElementById('f_fuelStart');
+		  const fuelEnd = document.getElementById('f_fuelEnd');
+		  if(fuelStart && fuelStart.value) entry.startFuelPct = parseFloat(fuelStart.value);
+		  if(fuelEnd && fuelEnd.value) entry.endFuelPct = parseFloat(fuelEnd.value);
+		}
+	 }
+
+    if (isEdit) trip.entries[editingEntryIndex] = entry; else trip.entries.push(entry);
+    saveTrip(trip); hideModal(); renderTripDetails();
+  };
+}
+
+function showTripActions() {
+    showModal(`
+      <div class="sheet-header">
+        <div class="sheet-title">Trip Actions</div>
+        <button class="sheet-close" onclick="hideModal()">Close</button>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        <button class="modal-btn" onclick="hideModal(); showTripEconomicsModal()">💰 DC Charging Economics</button>
+        <button class="modal-btn" onclick="hideModal(); changeTripVehicle()">🚗 Change Vehicle</button>
+        <button class="modal-btn" onclick="hideModal(); editTripFuelPrice()">⛽ Fuel Price</button>
+        <button class="modal-btn" onclick="renameTrip()">Rename Trip</button>
+        <button class="modal-btn destructive" onclick="deleteTrip()">Delete Trip</button>
+      </div>
+    `);
+}
+
+function showSyncMenu() {
+    const statusText = isLocalMode ? '🟠 Local Mode' : (dbx ? '✅ Connected to Dropbox' : '⚠️ Not connected to Dropbox');
+    const statusStyle = isLocalMode ? 'background:var(--warning-bg); color:var(--warning);' : (dbx ? 'background:var(--success-bg); color:var(--success);' : 'background:var(--warning-bg); color:var(--warning);');
+    
+    showModal(`<div class="sheet-header"><div class="sheet-title">Data & Settings</div><button class="sheet-close" onclick="hideModal()">Close</button></div>
+    <div style="padding:15px; border-radius:10px; margin-bottom:15px; text-align:center; font-weight:600; ${statusStyle}">
+      ${statusText}
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px;">
+      <button class="modal-btn" onclick="showVehiclesForm()">🚗 Manage Vehicles</button>
+      <button class="modal-btn" onclick="showSettingsForm()">⚙️ Settings</button>
+      <button class="modal-btn" onclick="showInstallGuide()">📲 Install App</button>
+      ${!isLocalMode && !dbx ? `<button class="modal-btn primary" onclick="connectDropbox()">🔗 Connect Dropbox</button>` : ''}
+      ${!isLocalMode && dbx ? `<button class="modal-btn primary" onclick="syncDropbox()">🔄 Sync Now</button>` : ''}
+      <button class="modal-btn" onclick="downloadCSV()">⬇️ Download CSV</button>
+      <button class="modal-btn" onclick="downloadLocal()">⬇️ Download JSON</button>
+      <button class="modal-btn" onclick="document.getElementById('fileInput').click()">⬆️ Restore JSON</button>
+      <input type="file" id="fileInput" style="display:none" onchange="restoreLocal(this)">
+      ${!isLocalMode && dbx ? `<button class="modal-btn destructive" onclick="disconnectDropbox()">Disconnect</button>` : ''}
+      <button class="modal-btn destructive" onclick="clearAll()">Clear All Data</button>
+    </div>`);
+}
+
+function showSettingsForm() {
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Settings</div>
+      <button class="sheet-close" onclick="hideModal()">Close</button>
+    </div>
+    <div style="padding:0 5px;">
+      <div style="font-weight:600; margin-bottom:10px;">Comparison Vehicle</div>
+      <p style="font-size:13px; color:var(--text-secondary); margin:0 0 15px;">Compare your PHEV costs against a reference petrol vehicle.</p>
+      
+      <div class="input-group"><label class="input-label">Make</label>
+        <input type="text" class="ios-input" id="set_make" value="${escapeHtml(appSettings.comparisonMake || '')}" placeholder="e.g. Ford">
+      </div>
+      <div class="input-group"><label class="input-label">Model</label>
+        <input type="text" class="ios-input" id="set_model" value="${escapeHtml(appSettings.comparisonModel || '')}" placeholder="e.g. Ranger Raptor">
+      </div>
+      <div class="input-group"><label class="input-label">Fuel Economy (L/100km)</label>
+        <input type="number" class="ios-input" id="set_l100" value="${appSettings.comparisonL100km}" step="0.1">
+      </div>
+      
+      <div style="margin:20px 0 10px; font-weight:600;">Fuel Prices</div>
+      <div style="display:flex; gap:8px; margin-bottom:15px;">
+        <label style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <span style="display:flex; align-items:center; gap:4px;">
+            <input type="radio" name="fuelType" value="U91" ${appSettings.comparisonFuelType === 'U91' ? 'checked' : ''} style="width:18px; height:18px;">
+            <span style="font-size:13px;">U91</span>
+          </span>
+          <input type="number" class="ios-input" id="price_U91" value="${appSettings.fuelPrices.U91}" step="0.01" style="text-align:center; font-size:14px;">
+        </label>
+        <label style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <span style="display:flex; align-items:center; gap:4px;">
+            <input type="radio" name="fuelType" value="U95" ${appSettings.comparisonFuelType === 'U95' ? 'checked' : ''} style="width:18px; height:18px;">
+            <span style="font-size:13px;">U95</span>
+          </span>
+          <input type="number" class="ios-input" id="price_U95" value="${appSettings.fuelPrices.U95}" step="0.01" style="text-align:center; font-size:14px;">
+        </label>
+        <label style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <span style="display:flex; align-items:center; gap:4px;">
+            <input type="radio" name="fuelType" value="U98" ${appSettings.comparisonFuelType === 'U98' ? 'checked' : ''} style="width:18px; height:18px;">
+            <span style="font-size:13px;">U98</span>
+          </span>
+          <input type="number" class="ios-input" id="price_U98" value="${appSettings.fuelPrices.U98}" step="0.01" style="text-align:center; font-size:14px;">
+        </label>
+      </div>
+
+      <div style="margin:20px 0 10px; font-weight:600;">Carbon Footprint</div>
+      <div class="input-group" style="margin:0;">
+        <label class="input-label">Grid Carbon Intensity (kg CO₂/kWh at generation)</label>
+        <input type="number" class="ios-input" id="set_gridCarbon" value="${appSettings.gridCarbonIntensity || 0.81}" step="0.01" min="0" max="2">
+        <p style="font-size:11px; color:var(--text-secondary); margin:4px 0 0;">QLD: 0.81 • NSW: 0.70 • VIC: 0.85 • SA: 0.35 • TAS: 0.15</p>
+      </div>
+      <div class="input-group" style="margin:0; margin-top:12px;">
+        <label class="input-label">Grid Transmission Efficiency (%)</label>
+        <input type="number" class="ios-input" id="set_gridEfficiency" value="${((appSettings.gridTransmissionEfficiency || 0.93) * 100).toFixed(0)}" step="1" min="80" max="100">
+        <p style="font-size:11px; color:var(--text-secondary); margin:4px 0 0;">Typical: 93% (~7% transmission losses)</p>
+      </div>
+
+      <button class="modal-btn primary" onclick="saveSettingsForm()" style="width:100%; margin-top:15px;">Save Settings</button>
+    </div>
+  `);
+}
+
+function saveSettingsForm() {
+  appSettings.comparisonMake = document.getElementById('set_make').value.trim();
+  appSettings.comparisonModel = document.getElementById('set_model').value.trim();
+  appSettings.comparisonL100km = parseFloat(document.getElementById('set_l100').value) || 10;
+  appSettings.fuelPrices.U91 = parseFloat(document.getElementById('price_U91').value) || 1.75;
+  appSettings.fuelPrices.U95 = parseFloat(document.getElementById('price_U95').value) || 1.85;
+  appSettings.fuelPrices.U98 = parseFloat(document.getElementById('price_U98').value) || 1.95;
+  appSettings.gridCarbonIntensity = parseFloat(document.getElementById('set_gridCarbon').value) || 0.81;
+  appSettings.gridTransmissionEfficiency = (parseFloat(document.getElementById('set_gridEfficiency').value) || 93) / 100;
+  const selectedFuel = document.querySelector('input[name="fuelType"]:checked');
+  if (selectedFuel) appSettings.comparisonFuelType = selectedFuel.value;
+  saveSettings();
+  hideModal();
+  if (currentTripId) renderTripDetails();
+  else renderTripsView();
+}
+
+// Vehicle Management
+function showVehiclesForm() {
+  const vehicles = appSettings.vehicles || [];
+  const vehicleList = vehicles.length === 0
+    ? '<p style="text-align:center; color:var(--text-secondary);">No vehicles configured</p>'
+    : vehicles.map((v, i) => {
+        const isPureEV = v.fuelTankTotal === 0;
+        const degradation = v.batteryDegradation || 0;
+        const effectiveCap = (v.batteryCapacity * (1 - degradation/100)).toFixed(1);
+        return `
+          <div class="ios-card" style="padding:12px; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <div style="font-weight:600;">${escapeHtml(v.name)}</div>
+                <div style="font-size:12px; color:var(--text-secondary);">
+                  ${effectiveCap} kWh${degradation > 0 ? ` (${degradation}% degraded)` : ''} •
+                  ${isPureEV ? 'Pure EV' : `${v.fuelTankTotal}L tank`}
+                </div>
+              </div>
+              <div style="display:flex; gap:8px;">
+                <button class="btn-small" onclick="editVehicle(${i})">Edit</button>
+                ${vehicles.length > 1 ? `<button class="btn-small destructive" onclick="deleteVehicle(${i})">×</button>` : ''}
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Vehicles</div>
+      <button class="sheet-close" onclick="hideModal()">Close</button>
+    </div>
+    <div style="max-height:60vh; overflow-y:auto;">
+      ${vehicleList}
+    </div>
+    <div style="display:flex; gap:8px; margin-top:10px;">
+      <button class="modal-btn primary" onclick="editVehicle(-1)" style="flex:1;">+ Add Vehicle</button>
+      <button class="modal-btn" onclick="showImportFromTripModal()" style="flex:1;">Import from Trip</button>
+    </div>
+  `);
+}
+
+function editVehicle(idx) {
+  const isNew = idx === -1;
+  const vehicle = isNew ? {
+    name: '',
+    batteryCapacity: 29.58,
+    batteryDegradation: 0,
+    fuelTankTotal: 60,
+    fuelTankReserve: 10,
+    engineEfficiency: 43,
+    maxFuelRangeKm: 700,
+    homeChargingCost: 0.32
+  } : { ...appSettings.vehicles[idx] };
+
+  const isPureEV = vehicle.fuelTankTotal === 0;
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">${isNew ? 'Add Vehicle' : 'Edit Vehicle'}</div>
+      <button class="sheet-close" onclick="showVehiclesForm()">Cancel</button>
+    </div>
+    <form id="formVehicle">
+      <div class="input-group"><label class="input-label">Vehicle Name</label>
+        <input type="text" class="ios-input" id="v_name" value="${escapeHtml(vehicle.name)}" placeholder="e.g. My PHEV" required>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <div class="input-group" style="flex:1;"><label class="input-label">Battery (kWh)</label>
+          <input type="number" class="ios-input" id="v_battery" value="${vehicle.batteryCapacity}" step="0.01" min="0" required>
+        </div>
+        <div class="input-group" style="flex:1;"><label class="input-label">Degradation (%)</label>
+          <input type="number" class="ios-input" id="v_degradation" value="${vehicle.batteryDegradation || 0}" step="1" min="0" max="50">
+        </div>
+      </div>
+      <div class="input-group"><label class="input-label">Home Charging ($/kWh)</label>
+        <input type="number" class="ios-input" id="v_homeCost" value="${vehicle.homeChargingCost}" step="0.01" min="0">
+      </div>
+      <div class="input-group"><label class="input-label">Fuel Tank Total (L) <span style="font-size:11px; color:var(--text-secondary);">0 for pure EV</span></label>
+        <input type="number" class="ios-input" id="v_tankTotal" value="${vehicle.fuelTankTotal}" step="1" min="0" onchange="toggleVehicleFuelFields()">
+      </div>
+      <div id="fuelFieldsContainer" style="${isPureEV ? 'display:none;' : ''}">
+        <div style="display:flex; gap:10px;">
+          <div class="input-group" style="flex:1;"><label class="input-label">Tank Reserve (L)</label>
+            <input type="number" class="ios-input" id="v_tankReserve" value="${vehicle.fuelTankReserve}" step="1" min="0">
+          </div>
+          <div class="input-group" style="flex:1;"><label class="input-label">Engine Eff. (%)</label>
+            <input type="number" class="ios-input" id="v_efficiency" value="${vehicle.engineEfficiency}" step="1" min="0" max="100">
+          </div>
+        </div>
+        <div class="input-group"><label class="input-label">Max Fuel Range (km)</label>
+          <input type="number" class="ios-input" id="v_maxRange" value="${vehicle.maxFuelRangeKm || 700}" step="10" min="0">
+        </div>
+      </div>
+      <button type="submit" class="modal-btn primary" style="width:100%; margin-top:15px;">${isNew ? 'Add Vehicle' : 'Save Changes'}</button>
+    </form>
+  `);
+
+  document.getElementById('formVehicle').onsubmit = (e) => {
+    e.preventDefault();
+    const name = document.getElementById('v_name').value.trim();
+    if (!name) return alert('Vehicle name is required');
+
+    const existingIdx = appSettings.vehicles.findIndex(v => v.name === name);
+    if (existingIdx !== -1 && existingIdx !== idx) {
+      return alert('A vehicle with this name already exists');
+    }
+
+    const newVehicle = {
+      name: name,
+      batteryCapacity: parseFloat(document.getElementById('v_battery').value) || 0,
+      batteryDegradation: parseFloat(document.getElementById('v_degradation').value) || 0,
+      fuelTankTotal: parseFloat(document.getElementById('v_tankTotal').value) || 0,
+      fuelTankReserve: parseFloat(document.getElementById('v_tankReserve').value) || 0,
+      engineEfficiency: parseFloat(document.getElementById('v_efficiency').value) || 43,
+      maxFuelRangeKm: parseFloat(document.getElementById('v_maxRange').value) || 700,
+      homeChargingCost: parseFloat(document.getElementById('v_homeCost').value) || 0
+    };
+
+    if (isNew) {
+      appSettings.vehicles.push(newVehicle);
+    } else {
+      appSettings.vehicles[idx] = newVehicle;
+    }
+
+    saveSettings();
+    showVehiclesForm();
+  };
+}
+
+function toggleVehicleFuelFields() {
+  const tankTotal = parseFloat(document.getElementById('v_tankTotal').value) || 0;
+  const container = document.getElementById('fuelFieldsContainer');
+  if (container) {
+    container.style.display = tankTotal === 0 ? 'none' : '';
+  }
+}
+
+function deleteVehicle(idx) {
+  const vehicle = appSettings.vehicles[idx];
+  if (!confirm(`Delete "${vehicle.name}"?`)) return;
+  appSettings.vehicles.splice(idx, 1);
+  if (appSettings.lastUsedVehicle === vehicle.name && appSettings.vehicles.length > 0) {
+    appSettings.lastUsedVehicle = appSettings.vehicles[0].name;
+  }
+  saveSettings();
+  showVehiclesForm();
+}
+
+function showImportFromTripModal() {
+  // Get unique vehicle specs from trips
+  const tripVehicles = [];
+  const seenSpecs = new Set();
+
+  trips.forEach(trip => {
+    if (trip.vehicleSpecs && trip.vehicleSpecs.name) {
+      const key = JSON.stringify(trip.vehicleSpecs);
+      if (!seenSpecs.has(key)) {
+        seenSpecs.add(key);
+        tripVehicles.push({
+          specs: trip.vehicleSpecs,
+          tripName: trip.name,
+          tripDate: trip.startDate
+        });
+      }
+    }
+  });
+
+  if (tripVehicles.length === 0) {
+    return alert('No trips with vehicle data found.');
+  }
+
+  const listHtml = tripVehicles.map((tv, idx) => {
+    const specs = tv.specs;
+    const existing = appSettings.vehicles.some(v => v.name === specs.name);
+    return `
+      <div style="padding:14px; background:var(--card-bg); border-radius:12px; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div style="flex:1;">
+            <div style="font-weight:600; color:var(--text-primary);">${escapeHtml(specs.name)}</div>
+            ${existing ? '<div style="font-size:11px; color:var(--text-secondary);">(already exists)</div>' : ''}
+            <div style="font-size:12px; color:var(--text-secondary); margin-top:2px;">
+              ${specs.batteryCapacity}kWh, ${specs.fuelTankTotal}L tank
+            </div>
+            <div style="font-size:11px; color:var(--text-tertiary); margin-top:2px;">
+              From: ${escapeHtml(tv.tripName)}
+            </div>
+          </div>
+          <button class="modal-btn ${existing ? '' : 'primary'}" onclick="importVehicleFromTrip(${idx})" style="padding:8px 16px;">
+            ${existing ? 'Update' : 'Import'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Import from Trip</div>
+      <button class="sheet-close" onclick="showVehiclesForm()">Cancel</button>
+    </div>
+    <p style="color:var(--text-secondary); font-size:13px; margin-bottom:12px;">
+      Add a vehicle profile from an existing trip.
+    </p>
+    <div style="max-height:50vh; overflow-y:auto;">
+      ${listHtml}
+    </div>
+  `);
+
+  window._tripVehiclesForImport = tripVehicles;
+}
+
+function importVehicleFromTrip(idx) {
+  const tv = window._tripVehiclesForImport[idx];
+  if (!tv) return;
+
+  const specs = tv.specs;
+  const existingIdx = appSettings.vehicles.findIndex(v => v.name === specs.name);
+
+  if (existingIdx !== -1) {
+    if (!confirm(`Update "${specs.name}" with specs from trip "${tv.tripName}"?`)) {
+      return;
+    }
+    appSettings.vehicles[existingIdx] = { ...specs };
+    showToast('Vehicle updated');
+  } else {
+    appSettings.vehicles.push({ ...specs });
+    showToast('Vehicle added');
+  }
+
+  saveSettings();
+  showVehiclesForm();
+}
+
+function downloadCSV() {
+    let csvContent = "data:text/csv;charset=utf-8,Trip Name,Date,Type,Location,Odometer (km),Distance (km),Arrival SOC (%),Arrival Fuel (%),Start Charge (%),End Charge (%),kWh Added,Cost/kWh,Fuel Added (L),Fuel Type,Price/L,Cost,Notes,GPS Lat,GPS Lon\n";
+
+    trips.forEach(t => {
+        let prevOdo = 0;
+        const sorted = [...t.entries].sort((a, b) => a.odometer - b.odometer);
+        const safeTripName = sanitizeForCsv(t.name);
+        const specs = getTripVehicleSpecs(t);
+
+        sorted.forEach((e, i) => {
+            let dist = i > 0 ? (e.odometer - prevOdo).toFixed(1) : 0;
+            prevOdo = e.odometer;
+
+            let cost = 0;
+            if (e.type === 'fuel') {
+                cost = e.litres * e.costPerLitre;
+            } else if (e.type === 'charging') {
+                if (e.kwhDelivered) {
+                    cost = e.kwhDelivered * e.costPerKWh;
+                } else {
+                    cost = ((e.endSOC - e.startSOC) / 100 * specs.batteryCapacity * e.costPerKWh);
+                }
+            }
+
+            const safeLocation = sanitizeForCsv(e.location || e.name || '');
+            const safeNotes = sanitizeForCsv(e.notes || '');
+            
+            // Get fuel% from either field name
+            const fuelPct = e.arrivalFuelPct ?? e.fuelLevelPct ?? '';
+
+            const row = [
+                `"${safeTripName.replace(/"/g, '""')}"`,
+                e.date,
+                e.type,
+                `"${safeLocation.replace(/"/g, '""')}"`,
+                e.odometer,
+                dist,
+                e.arrivalSOC || '',
+                fuelPct,
+                e.startSOC || '',
+                e.endSOC || '',
+                e.kwhDelivered || '',
+                e.costPerKWh || '',
+                e.litres || '',
+                e.fuelType || '',
+                e.costPerLitre || '',
+                cost.toFixed(2),
+                `"${safeNotes.replace(/"/g, '""')}"`,
+                e.gps ? e.gps.lat : '',
+                e.gps ? e.gps.lon : ''
+            ].join(",");
+
+            csvContent += row + "\n";
+        });
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "shark_trips.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// ... (Rest of helper functions same as v7.2)
+function showInstallGuide() { showModal(`<div class="sheet-header"><div class="sheet-title">Install App</div><button class="sheet-close" onclick="hideModal()">Close</button></div><div style="font-size:15px; line-height:1.5; color:var(--text-secondary); padding:0 10px;"><p style="margin-bottom:15px;"><strong>iPhone (Safari):</strong><br>1. Tap the Share button <span style="font-size:18px">⎋</span><br>2. Scroll down and tap "Add to Home Screen" <span style="font-size:18px">⊞</span></p><hr style="border:0; border-top:1px solid var(--separator); margin:15px 0;"><p><strong>Android (Chrome):</strong><br>1. Tap the menu button (⋮)<br>2. Tap "Install App" or "Add to Home Screen"</p></div>`); }
+
+function calculateTripSummary(trip) {
+    const entries = [...trip.entries].sort((a,b)=>(a.odometer||0)-(b.odometer||0));
+    const specs = getTripVehicleSpecs(trip);
+
+    let distance = 0;
+    let totalCost = 0;
+    let fuelLitres = 0;
+    let fuelCost = 0;
+    let evFromDrops = 0;       // EV energy from SOC drops (actual consumption while driving)
+    let evFromCharges = 0;     // EV energy from charging sessions
+    let fuelConsumed = 0;      // Fuel consumed while driving
+    let campEV = 0;            // EV energy used while camping (PTL) - excluded from efficiency
+    let campFuel = 0;          // Fuel used while camping (ICE recharge) - excluded from efficiency
+    let prevFuelPct = null;
+    let prevSoc = null;
+
+    if (entries.length > 1) {
+        distance = (entries[entries.length - 1].odometer || 0) - (entries[0].odometer || 0);
+    }
+
+    for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+
+        // ===== SOC TRACKING (for EV consumption from drops) =====
+        if (e.type === 'charging') {
+            // For charging: first calculate drop from prevSoc to startSOC (driving consumption)
+            // then update prevSoc to endSOC (after charging)
+            if (typeof e.startSOC === 'number' && !isNaN(e.startSOC)) {
+                if (prevSoc !== null && e.startSOC < prevSoc) {
+                    evFromDrops += (prevSoc - e.startSOC) / 100 * specs.batteryCapacity;
+                }
+            }
+            // Set prevSoc to endSOC (departure state after charging)
+            if (typeof e.endSOC === 'number' && !isNaN(e.endSOC)) {
+                prevSoc = e.endSOC;
+            } else if (typeof e.startSOC === 'number' && !isNaN(e.startSOC)) {
+                prevSoc = e.startSOC;
+            }
+        } else {
+            // For non-charging entries: use arrivalSOC
+            let socHere = null;
+            if (typeof e.arrivalSOC === 'number' && !isNaN(e.arrivalSOC)) {
+                socHere = e.arrivalSOC;
+            }
+
+            // Accumulate EV energy from SOC drops
+            if (prevSoc !== null && socHere !== null && socHere < prevSoc) {
+                evFromDrops += (prevSoc - socHere) / 100 * specs.batteryCapacity;
+            }
+
+            if (socHere !== null) {
+                prevSoc = socHere;
+            }
+        }
+
+        // ===== FUEL% TRACKING (from waypoints and camp arrivals) =====
+        if (e.type === 'waypoint' || e.type === 'camp') {
+            let fuelPctHere = null;
+            if (typeof e.arrivalFuelPct === 'number' && !isNaN(e.arrivalFuelPct)) {
+                fuelPctHere = e.arrivalFuelPct;
+            } else if (typeof e.fuelLevelPct === 'number' && !isNaN(e.fuelLevelPct)) {
+                fuelPctHere = e.fuelLevelPct;
+            }
+
+            if (fuelPctHere !== null) {
+                if (prevFuelPct !== null && fuelPctHere < prevFuelPct) {
+                    fuelConsumed += (prevFuelPct - fuelPctHere) / 100 * specs.fuelTankUsable;
+                }
+                // For camp, don't update prevFuelPct here - let the camp section handle the baseline
+                if (e.type === 'waypoint') {
+                    prevFuelPct = fuelPctHere;
+                }
+            }
+        }
+
+        // ===== EV ENERGY FROM CHARGING (for cost + fallback) =====
+        if (e.type === 'charging') {
+            let k = e.kwhDelivered;
+            if ((!k || isNaN(k)) && typeof e.startSOC === 'number' && typeof e.endSOC === 'number') {
+                k = ((e.endSOC - e.startSOC) / 100) * specs.batteryCapacity;
+            }
+            if (k && k > 0) {
+                evFromCharges += k;
+                totalCost += k * e.costPerKWh;
+            }
+        }
+
+        // ===== FUEL =====
+        if (e.type === 'fuel') {
+            if (typeof e.litres === 'number' && !isNaN(e.litres)) {
+                fuelLitres += e.litres;
+                fuelCost += e.litres * e.costPerLitre;
+            }
+            // Update fuel% baseline after refuelling
+            if (e.isFull) {
+                prevFuelPct = 100;
+            } else if (typeof e.litres === 'number' && prevFuelPct !== null) {
+                const addedPct = (e.litres / specs.fuelTankUsable) * 100;
+                prevFuelPct = Math.min(100, prevFuelPct + addedPct);
+            }
+        }
+
+        // ===== CAMP (PTL and ICE recharge) =====
+        // Camp consumption is tracked separately and excluded from per-km efficiency
+        if (e.type === 'camp') {
+            // Track EV consumption from PTL usage (stationary - not per-km)
+            if (typeof e.startSOC === 'number' && typeof e.endSOC === 'number') {
+                const socDelta = e.startSOC - e.endSOC;
+                if (socDelta > 0) {
+                    // PTL usage - battery drained (tracked separately from driving)
+                    campEV += socDelta / 100 * specs.batteryCapacity;
+                }
+                // Note: If endSOC > startSOC (ICE recharged battery), this just resets the baseline.
+                // The energy is accounted for via campFuel, and subsequent driving uses that charge normally.
+                // Update SOC baseline to departure SOC
+                prevSoc = e.endSOC;
+            } else if (typeof e.arrivalSOC === 'number' && !isNaN(e.arrivalSOC)) {
+                // No SOC change recorded - use arrivalSOC as baseline (no consumption at camp)
+                prevSoc = e.arrivalSOC;
+            }
+
+            // Track fuel consumption from ICE recharge while camping (stationary - not per-km)
+            if (e.usedICE && typeof e.startFuelPct === 'number' && typeof e.endFuelPct === 'number') {
+                const fuelDelta = e.startFuelPct - e.endFuelPct;
+                if (fuelDelta > 0) {
+                    campFuel += fuelDelta / 100 * specs.fuelTankUsable;
+                }
+                // Update fuel% baseline to departure level
+                prevFuelPct = e.endFuelPct;
+            } else if (typeof e.arrivalFuelPct === 'number' && !isNaN(e.arrivalFuelPct)) {
+                // No ICE used - update baseline to arrival fuel% (same as departure)
+                prevFuelPct = e.arrivalFuelPct;
+            }
+        }
+    }
+
+    totalCost += fuelCost;
+
+    // Driving EV consumption (excludes camp/PTL usage)
+    const evDriving = evFromDrops > 0 ? evFromDrops : evFromCharges;
+
+    // Driving fuel consumption (excludes camp/ICE recharge)
+    const fuelDriving = fuelConsumed > 0 ? fuelConsumed : fuelLitres;
+
+    // Total EV and fuel including camp consumption (for total cost/energy displays)
+    const totalEV = evDriving + campEV;
+    const totalFuelConsumed = fuelDriving + campFuel;
+
+    // Calculate consumed fuel cost using trip's reference price (for trips without refuelling)
+    // fuelCost = fuel purchased at pumps (actual recorded prices)
+    // consumedFuelCost = fuel consumed (from gauge) × reference price
+    const referenceFuelPrice = trip.referenceFuelPrice || appSettings?.fuelPrices?.[appSettings?.comparisonFuelType] || 1.80;
+    const consumedFuelCost = totalFuelConsumed * referenceFuelPrice;
+
+    // For total cost: use purchased fuel cost if we have it, otherwise use consumed fuel cost
+    // This ensures trips without refuelling still show a meaningful fuel cost
+    const effectiveFuelCost = fuelCost > 0 ? fuelCost : consumedFuelCost;
+    const chargingCost = totalCost - fuelCost;
+
+    return {
+        distance,
+        totalCost: chargingCost + effectiveFuelCost,
+        chargingCost,
+        fuelCost,                          // Fuel purchased cost (from refuelling entries)
+        consumedFuelCost,                  // Fuel consumed cost (using reference price)
+        effectiveFuelCost,                 // The one to use for display (purchased if available, else consumed)
+        referenceFuelPrice,                // The price used for consumed fuel calc
+        totalEVEnergy: totalEV,            // Total EV including camp PTL
+        totalFuel: fuelLitres,             // Fuel added at pumps
+        fuelConsumed: totalFuelConsumed,   // Total fuel consumed including camp
+        evFromCharges,                     // kWh from DC charging (for economics calc)
+        campEV,                            // Camp PTL usage (for display)
+        campFuel,                          // Camp ICE fuel usage (for display)
+        // Efficiency calculated from DRIVING only (excludes stationary camp usage)
+        evEfficiency: distance > 0 ? (evDriving * 1000) / distance : 0,
+        fuelEconomy: distance > 0 ? (fuelDriving / distance) * 100 : 0
+    };
+}
+
+// Trip Economics - DC charging vs ICE generation (PHEV) or home charging (BEV)
+function calculateTripEconomics(trip, summary) {
+  const specs = getTripVehicleSpecs(trip);
+  // Use trip's reference fuel price for economics calculations
+  const fuelPrice = trip.referenceFuelPrice || appSettings.fuelPrices[appSettings.comparisonFuelType] || 1.80;
+  const gridCarbon = appSettings.gridCarbonIntensity || 0.81;
+  const gridEfficiency = appSettings.gridTransmissionEfficiency || 0.93;
+
+  // DC charging energy and cost
+  const dcEnergy = summary.evFromCharges || 0;
+  const dcCost = summary.chargingCost || 0;
+
+  if (dcEnergy <= 0 || dcCost <= 0) {
+    return { hasDCCharging: false };
+  }
+
+  // "No DC" scenario - ICE would need to generate the DC charging energy
+  const engineEfficiency = specs.engineEfficiency || 0.43;
+  const fuelToGenerateDC = dcEnergy / engineEfficiency / PETROL_KWH_PER_LITRE;
+  const noDCFuelCost = fuelToGenerateDC * fuelPrice;
+
+  // Verdict: positive = DC saved money, negative = DC cost more
+  const dcSavings = noDCFuelCost - dcCost;
+
+  // Carbon footprint comparison
+  // DC: grid energy at generation (accounting for transmission + charger losses) × grid carbon
+  const gridEnergyAtGeneration = dcEnergy / gridEfficiency / DC_CHARGER_EFFICIENCY;
+  const dcCarbonKg = gridEnergyAtGeneration * gridCarbon;
+  // ICE: fuel × CO2/litre × upstream factor (well-to-wheel)
+  const iceCarbonKg = fuelToGenerateDC * PETROL_CO2_PER_LITRE * PETROL_UPSTREAM_FACTOR;
+  const carbonDiff = dcCarbonKg - iceCarbonKg;
+
+  // Break-even DC price
+  const breakEvenPrice = dcEnergy > 0 ? noDCFuelCost / dcEnergy : 0;
+
+  return {
+    dcEnergy,
+    dcCost,
+    avgDCCostPerKwh: dcEnergy > 0 ? dcCost / dcEnergy : 0,
+    noDCExtraFuel: fuelToGenerateDC,
+    noDCExtraCost: noDCFuelCost,
+    dcSavings,
+    engineEfficiency: engineEfficiency * 100,
+    fuelPrice,  // Trip's reference fuel price used in calculations
+    dcCarbonKg,
+    iceCarbonKg,
+    carbonDiff,
+    gridCarbon,
+    gridEfficiency,
+    breakEvenPrice,
+    hasDCCharging: true
+  };
+}
+
+function showTripEconomicsModal() {
+  const trip = trips.find(t => String(t.id) === String(currentTripId));
+  if (!trip) return;
+
+  const summary = calculateTripSummary(trip);
+  const economics = calculateTripEconomics(trip, summary);
+  const specs = getTripVehicleSpecs(trip);
+  const fuelPrice = economics.fuelPrice || 1.80;
+
+  if (!economics.hasDCCharging) {
+    showModal(`
+      <div class="sheet-header">
+        <div class="sheet-title">Trip Economics</div>
+        <button class="sheet-close" onclick="hideModal()">Close</button>
+      </div>
+      <p style="color:var(--text-secondary); padding:20px 0; text-align:center;">
+        No DC charging on this trip.<br>Add charging stops to see the economics analysis.
+      </p>
+    `);
+    return;
+  }
+
+  // For BEV: Compare DC cost to home charging cost
+  // For PHEV: Compare DC cost to ICE generation cost
+  if (specs.isPureEV) {
+    // BEV Economics
+    const homeCostForDC = economics.dcEnergy * specs.homeChargingCost;
+    const dcSavingsVsHome = homeCostForDC - economics.dcCost;
+    const verdictStyle = dcSavingsVsHome >= 0 ? 'background:rgba(52,199,89,0.15); color:var(--success);' : 'background:rgba(255,59,48,0.15); color:var(--destructive);';
+    const verdictText = dcSavingsVsHome >= 0
+      ? `DC saved <strong>$${dcSavingsVsHome.toFixed(2)}</strong> vs home`
+      : `Home would save <strong>$${Math.abs(dcSavingsVsHome).toFixed(2)}</strong>`;
+
+    showModal(`
+      <div class="sheet-header">
+        <div class="sheet-title">Trip Economics (BEV)</div>
+        <button class="sheet-close" onclick="hideModal()">Close</button>
+      </div>
+      <div style="padding:10px 0; max-height:70vh; overflow-y:auto;">
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:12px;">
+          <div style="font-weight:600; font-size:13px; margin-bottom:10px; color:var(--text-primary);">DC Charging Summary</div>
+          <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+            <span>Energy</span><span style="font-weight:500;">${economics.dcEnergy.toFixed(1)} kWh</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+            <span>Avg cost</span><span style="font-weight:500;">$${economics.avgDCCostPerKwh.toFixed(2)}/kWh</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:8px 0 0; font-weight:600; font-size:15px;">
+            <span>Total DC cost</span><span>$${economics.dcCost.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:12px;">
+          <div style="font-weight:600; font-size:13px; margin-bottom:10px; color:var(--text-primary);">Home Charging Comparison</div>
+          <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+            <span>Home rate</span><span style="font-weight:500;">$${specs.homeChargingCost.toFixed(2)}/kWh</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:8px 0 0; font-weight:600; font-size:15px;">
+            <span>Home charging cost</span><span>$${homeCostForDC.toFixed(2)}</span>
+          </div>
+        </div>
+
+        <div style="padding:15px; border-radius:10px; text-align:center; ${verdictStyle}">
+          ${verdictText}
+        </div>
+
+        <details style="margin-top:12px; border:1px solid var(--border-color); border-radius:10px; overflow:hidden;">
+          <summary style="padding:12px; background:var(--card-bg); cursor:pointer; font-size:13px; font-weight:500; color:var(--text-secondary);">
+            Assumptions & Constants
+          </summary>
+          <div style="padding:12px; font-size:12px; background:var(--bg-color);">
+            <div style="font-weight:600; font-size:11px; color:var(--text-secondary); text-transform:uppercase; margin-bottom:6px;">Vehicle (${escapeHtml(specs.name || 'Unknown')})</div>
+            <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--separator);"><span>Battery capacity</span><span>${specs.batteryCapacity.toFixed(1)} kWh</span></div>
+            <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Home charging cost</span><span>$${specs.homeChargingCost.toFixed(2)}/kWh</span></div>
+
+            <div style="font-weight:600; font-size:11px; color:var(--text-secondary); text-transform:uppercase; margin:12px 0 6px;">Calculation Formulas</div>
+            <div style="background:var(--card-bg); padding:10px; border-radius:6px; font-size:10px; color:var(--text-secondary); line-height:1.5;">
+              <div><strong>Home cost:</strong> DC kWh × home rate</div>
+              <div><strong>Savings:</strong> Home cost − DC cost</div>
+            </div>
+          </div>
+        </details>
+      </div>
+    `);
+    return;
+  }
+
+  // PHEV Economics
+  const verdictStyle = economics.dcSavings >= 0 ? 'background:rgba(52,199,89,0.15); color:var(--success);' : 'background:rgba(255,59,48,0.15); color:var(--destructive);';
+  const verdictText = economics.dcSavings >= 0
+    ? `DC saved <strong>$${economics.dcSavings.toFixed(2)}</strong>`
+    : `Would save <strong>$${Math.abs(economics.dcSavings).toFixed(2)}</strong> without DC`;
+
+  // Carbon verdict
+  const carbonStyle = economics.carbonDiff <= 0 ? 'color:var(--success);' : 'color:var(--destructive);';
+  const carbonText = economics.carbonDiff <= 0
+    ? `DC saved ${Math.abs(economics.carbonDiff).toFixed(2)} kg CO₂`
+    : `ICE would save ${economics.carbonDiff.toFixed(2)} kg CO₂`;
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Trip Economics</div>
+      <button class="sheet-close" onclick="hideModal()">Close</button>
+    </div>
+    <div style="padding:10px 0; max-height:70vh; overflow-y:auto;">
+      <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:12px;">
+        <div style="font-weight:600; font-size:13px; margin-bottom:10px; color:var(--text-primary);">DC Charging Summary</div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+          <span>Energy</span><span style="font-weight:500;">${economics.dcEnergy.toFixed(1)} kWh</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+          <span>Avg cost</span><span style="font-weight:500;">$${economics.avgDCCostPerKwh.toFixed(2)}/kWh</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:8px 0 0; font-weight:600; font-size:15px;">
+          <span>Total DC cost</span><span>$${economics.dcCost.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:12px;">
+        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:var(--text-primary);">"What if no DC charging?"</div>
+        <p style="font-size:11px; color:var(--text-secondary); margin:0 0 10px;">If the ICE generated this energy instead:</p>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+          <span>Engine efficiency</span><span style="font-weight:500;">${economics.engineEfficiency.toFixed(0)}%</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+          <span>Extra fuel needed</span><span style="font-weight:500;">${economics.noDCExtraFuel.toFixed(1)} L</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+          <span>Fuel price</span><span style="font-weight:500;">$${fuelPrice.toFixed(2)}/L</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:8px 0 0; font-weight:600; font-size:15px;">
+          <span>Extra fuel cost</span><span>$${economics.noDCExtraCost.toFixed(2)}</span>
+        </div>
+      </div>
+
+      <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:12px; margin-bottom:12px;">
+        <div style="font-weight:600; font-size:13px; margin-bottom:10px; color:var(--text-primary);">Carbon Footprint</div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+          <span>DC charging CO₂</span><span style="font-weight:500;">${economics.dcCarbonKg.toFixed(2)} kg</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--separator); font-size:14px;">
+          <span>ICE generation CO₂</span><span style="font-weight:500;">${economics.iceCarbonKg.toFixed(2)} kg</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; padding:8px 0 0; font-weight:600; font-size:14px; ${carbonStyle}">
+          <span>Difference</span><span>${carbonText}</span>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:12px;">
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:12px; text-align:center;">
+          <div style="font-size:10px; font-weight:500; color:var(--text-secondary); text-transform:uppercase; margin-bottom:4px;">DC Cost</div>
+          <div style="font-size:20px; font-weight:700; color:var(--text-primary);">$${economics.dcCost.toFixed(2)}</div>
+          <div style="font-size:9px; color:var(--text-secondary); margin-top:4px;">${economics.dcEnergy.toFixed(1)} kWh</div>
+        </div>
+        <div style="background:${economics.dcSavings >= 0 ? 'rgba(52,199,89,0.1)' : 'rgba(255,59,48,0.1)'}; border:1px solid ${economics.dcSavings >= 0 ? 'rgba(52,199,89,0.3)' : 'rgba(255,59,48,0.3)'}; border-radius:10px; padding:12px; text-align:center;">
+          <div style="font-size:10px; font-weight:500; color:var(--text-secondary); text-transform:uppercase; margin-bottom:4px;">${economics.dcSavings >= 0 ? 'Saved' : 'Could Save'}</div>
+          <div style="font-size:20px; font-weight:700; color:${economics.dcSavings >= 0 ? 'var(--success)' : 'var(--danger)'};">$${Math.abs(economics.dcSavings).toFixed(2)}</div>
+          <div style="font-size:9px; color:var(--text-secondary); margin-top:4px;">${economics.dcSavings >= 0 ? 'vs ICE' : 'without DC'}</div>
+        </div>
+        <div style="background:var(--card-bg); border:1px solid var(--border-color); border-radius:10px; padding:12px; text-align:center;">
+          <div style="font-size:10px; font-weight:500; color:var(--text-secondary); text-transform:uppercase; margin-bottom:4px;">Break-even</div>
+          <div style="font-size:20px; font-weight:700; color:var(--text-primary);">$${economics.breakEvenPrice.toFixed(2)}</div>
+          <div style="font-size:9px; color:var(--text-secondary); margin-top:4px;">per kWh</div>
+        </div>
+      </div>
+
+      <details style="margin-top:12px; border:1px solid var(--border-color); border-radius:10px; overflow:hidden;">
+        <summary style="padding:12px; background:var(--card-bg); cursor:pointer; font-size:13px; font-weight:500; color:var(--text-secondary);">
+          Assumptions & Constants
+        </summary>
+        <div style="padding:12px; font-size:12px; background:var(--bg-color);">
+          <div style="font-weight:600; font-size:11px; color:var(--text-secondary); text-transform:uppercase; margin-bottom:6px;">Vehicle (${escapeHtml(specs.name || 'Unknown')})</div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--separator);"><span>Engine efficiency</span><span>${(specs.engineEfficiency * 100).toFixed(0)}%</span></div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--separator);"><span>Battery capacity</span><span>${specs.batteryCapacity.toFixed(1)} kWh</span></div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Fuel tank usable</span><span>${specs.fuelTankUsable.toFixed(0)} L</span></div>
+
+          <div style="font-weight:600; font-size:11px; color:var(--text-secondary); text-transform:uppercase; margin:12px 0 6px;">Fuel</div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--separator);"><span>Reference fuel price</span><span>$${fuelPrice.toFixed(2)}/L</span></div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Petrol energy content</span><span>${PETROL_KWH_PER_LITRE} kWh/L</span></div>
+
+          <div style="font-weight:600; font-size:11px; color:var(--text-secondary); text-transform:uppercase; margin:12px 0 6px;">Carbon Emissions</div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--separator);"><span>Petrol CO₂ (combustion)</span><span>${PETROL_CO2_PER_LITRE} kg/L</span></div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--separator);"><span>Upstream factor</span><span>×${PETROL_UPSTREAM_FACTOR}</span></div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--separator);"><span>Grid carbon intensity</span><span>${economics.gridCarbon.toFixed(2)} kg/kWh</span></div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid var(--separator);"><span>Grid transmission eff.</span><span>${(economics.gridEfficiency * 100).toFixed(0)}%</span></div>
+          <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>DC charger efficiency</span><span>${(DC_CHARGER_EFFICIENCY * 100).toFixed(0)}%</span></div>
+
+          <div style="font-weight:600; font-size:11px; color:var(--text-secondary); text-transform:uppercase; margin:12px 0 6px;">Calculation Formulas</div>
+          <div style="background:var(--card-bg); padding:10px; border-radius:6px; font-size:10px; color:var(--text-secondary); line-height:1.5;">
+            <div><strong>ICE fuel:</strong> DC kWh ÷ engine eff. ÷ ${PETROL_KWH_PER_LITRE} kWh/L</div>
+            <div><strong>DC CO₂:</strong> kWh ÷ grid eff. ÷ charger eff. × grid carbon</div>
+            <div><strong>ICE CO₂:</strong> Litres × ${PETROL_CO2_PER_LITRE} kg/L × ${PETROL_UPSTREAM_FACTOR}</div>
+          </div>
+        </div>
+      </details>
+    </div>
+  `);
+}
+
+function saveTrip(t) {
+  t.lastModified = Date.now(); 
+  const idx = trips.findIndex(x => String(x.id) === String(t.id)); 
+  if(idx >= 0) trips[idx] = t; 
+  else trips.unshift(t); 
+  safeStorage.setItem('bydSharkTrips', JSON.stringify(trips)); 
+  }
+  
+function loadTrips() { trips = JSON.parse(safeStorage.getItem('bydSharkTrips') || '[]'); }
+
+function renameTrip() {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  if (!t) return;
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Rename Trip</div>
+      <button class="sheet-close" onclick="hideModal()">Close</button>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:12px; padding:10px;">
+      <label style="font-size:14px; font-weight:600;">Trip Name</label>
+      <input id="renameTripField" type="text"
+        class="ios-input"
+        value="${escapeHtml(t.name)}"
+        style="font-size:16px;">
+      <button class="modal-btn primary" onclick="finishRenameTrip()">Save</button>
+      <button class="modal-btn" onclick="hideModal()">Cancel</button>
+    </div>
+  `);
+}
+
+function finishRenameTrip() {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  const field = document.getElementById('renameTripField');
+  if (!t || !field) return;
+
+  const newName = field.value.trim();
+  if (!newName) return;
+
+  t.name = newName;
+  saveTrip(t);
+  hideModal();
+  renderTripDetails();
+}
+
+function changeTripVehicle() {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  if (!t) return;
+
+  const currentVehicle = t.vehicleSpecs?.name || 'Unknown';
+  const vehicleOptions = (appSettings.vehicles || []).map(v =>
+    `<option value="${escapeHtml(v.name)}" ${v.name === currentVehicle ? 'selected' : ''}>${escapeHtml(v.name)}</option>`
+  ).join('');
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Change Vehicle</div>
+      <button class="sheet-close" onclick="hideModal()">Close</button>
+    </div>
+    <div style="padding:10px; display:flex; flex-direction:column; gap:12px;">
+      <p style="font-size:13px; color:var(--text-secondary); margin:0;">
+        Current: <strong>${escapeHtml(currentVehicle)}</strong>
+      </p>
+      <div class="input-group" style="margin:0;">
+        <label class="input-label">Select Vehicle</label>
+        <select class="ios-input" id="newTripVehicle">${vehicleOptions}</select>
+      </div>
+      <p style="font-size:11px; color:var(--text-secondary); margin:0;">
+        This will update the vehicle specs used for all calculations on this trip.
+      </p>
+      <button class="modal-btn primary" onclick="finishChangeTripVehicle()">Update Vehicle</button>
+      <button class="modal-btn" onclick="hideModal()">Cancel</button>
+    </div>
+  `);
+}
+
+function finishChangeTripVehicle() {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  if (!t) return;
+
+  const vehicleName = document.getElementById('newTripVehicle')?.value;
+  const vehicleProfile = getVehicleProfile(vehicleName);
+
+  if (!vehicleProfile) {
+    alert('Vehicle not found');
+    return;
+  }
+
+  t.vehicleSpecs = { ...vehicleProfile };
+  saveTrip(t);
+  hideModal();
+  renderTripDetails();
+}
+
+function editTripFuelPrice() {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  if (!t) return;
+
+  const currentPrice = t.referenceFuelPrice || getMostRecentFuelPrice();
+  const defaultPrice = appSettings.fuelPrices[appSettings.comparisonFuelType] || 1.80;
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Trip Fuel Price</div>
+      <button class="sheet-close" onclick="hideModal()">Close</button>
+    </div>
+    <div style="padding:10px; display:flex; flex-direction:column; gap:12px;">
+      <p style="font-size:13px; color:var(--text-secondary); margin:0;">
+        Set the reference fuel price for this trip. Used to calculate consumed fuel cost when no refuelling occurs.
+      </p>
+      <div class="input-group" style="margin:0;">
+        <label class="input-label">Fuel Price ($/L)</label>
+        <input type="number" class="ios-input" id="tripFuelPrice" value="${currentPrice.toFixed(2)}" step="0.01" min="0" required>
+      </div>
+      <p style="font-size:11px; color:var(--text-secondary); margin:0;">
+        Setting default: $${defaultPrice.toFixed(2)} (${appSettings.comparisonFuelType})
+      </p>
+      <button class="modal-btn primary" onclick="finishEditFuelPrice()">Save</button>
+      <button class="modal-btn" onclick="hideModal()">Cancel</button>
+    </div>
+  `);
+}
+
+function finishEditFuelPrice() {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  if (!t) return;
+
+  const newPrice = parseFloat(document.getElementById('tripFuelPrice')?.value);
+  if (isNaN(newPrice) || newPrice < 0) {
+    alert('Please enter a valid fuel price');
+    return;
+  }
+
+  t.referenceFuelPrice = newPrice;
+  saveTrip(t);
+  hideModal();
+  renderTripDetails();
+}
+
+function deleteTrip() {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  if (!t) return;
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Delete Trip</div>
+      <button class="sheet-close" onclick="hideModal()">Close</button>
+    </div>
+    <div style="padding:10px; display:flex; flex-direction:column; gap:12px;">
+      <div style="font-size:15px; text-align:center;">
+        Are you sure you want to permanently delete:<br>
+        <strong>${escapeHtml(t.name)}</strong>?
+      </div>
+      <button class="modal-btn destructive" onclick="finishDeleteTrip()">Delete Trip</button>
+      <button class="modal-btn" onclick="hideModal()">Cancel</button>
+    </div>
+  `);
+}
+
+function finishDeleteTrip() {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  if (!t) return;
+
+  t.deleted = true;
+  t.lastModified = Date.now();
+  saveTrip(t);
+  hideModal();
+  renderTripsView();
+  if (dbx) syncDropbox();
+}
+
+function deleteEntry(idx) {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  if (!t || !Array.isArray(t.entries)) return;
+
+  const entry = t.entries[idx];
+  if (!entry) return;
+
+  // Build a short label for context in the dialog
+  const labelParts = [];
+  if (entry.date) labelParts.push(formatDate(entry.date));
+  if (entry.location || entry.name) labelParts.push(entry.location || entry.name);
+  const label = labelParts.join(" • ") || `Entry #${idx + 1}`;
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Delete Entry</div>
+      <button class="sheet-close" onclick="hideModal()">Close</button>
+    </div>
+    <div style="padding:10px; display:flex; flex-direction:column; gap:12px;">
+      <div style="font-size:15px; text-align:center;">
+        Are you sure you want to delete this entry?<br>
+        <strong>${escapeHtml(label)}</strong>
+      </div>
+      <button class="modal-btn destructive" onclick="finishDeleteEntry(${idx})">Delete Entry</button>
+      <button class="modal-btn" onclick="hideModal()">Cancel</button>
+    </div>
+  `);
+}
+
+function finishDeleteEntry(idx) {
+  const t = trips.find(x => String(x.id) === String(currentTripId));
+  if (!t || !Array.isArray(t.entries)) return;
+  if (idx < 0 || idx >= t.entries.length) return;
+
+  t.entries.splice(idx, 1);
+  saveTrip(t);
+  hideModal();
+  renderTripDetails();
+}
+
+function clearAll() { if(confirm("Delete EVERYTHING?")) { safeStorage.removeItem('bydSharkTrips'); trips = []; hideModal(); renderTripsView(); } }
+function downloadLocal() {
+  const backup = { version: 3, trips: trips, settings: appSettings, exportDate: new Date().toISOString() };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'BYD-Backup.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+function restoreLocal(input) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const data = JSON.parse(e.target.result);
+    if (Array.isArray(data)) {
+      trips = data;
+    } else if (data.trips) {
+      trips = data.trips;
+      if (data.settings) {
+        appSettings = { ...DEFAULT_SETTINGS, ...data.settings };
+        // Ensure vehicles array exists (migration for v2 backups)
+        if (!appSettings.vehicles || appSettings.vehicles.length === 0) {
+          appSettings.vehicles = [{ ...DEFAULT_VEHICLE_SPECS }];
+          appSettings.lastUsedVehicle = DEFAULT_VEHICLE_SPECS.name;
+        }
+        safeStorage.setItem('bydSharkSettings', JSON.stringify(appSettings));
+      }
+    }
+    // Migrate trips without vehicleSpecs
+    trips.forEach(trip => {
+      if (!trip.vehicleSpecs) {
+        trip.vehicleSpecs = { ...DEFAULT_VEHICLE_SPECS };
+      }
+    });
+    safeStorage.setItem('bydSharkTrips', JSON.stringify(trips));
+    hideModal();
+    renderTripsView();
+  };
+  reader.readAsText(input.files[0]);
+}
+function initDropbox() { if (typeof Dropbox === 'undefined') return; const t = safeStorage.getItem('dropboxToken'); if(t) { try { dbx = new Dropbox.Dropbox({ accessToken: t }); } catch(e){ safeStorage.removeItem('dropboxToken'); } } }
+function handleDropboxAuth() { const t = window.location.hash.match(/access_token=([^&]*)/)[1]; safeStorage.setItem('dropboxToken', t); window.history.replaceState({}, '', window.location.pathname); initDropbox(); }
+function connectDropbox() { let cleanUrl = window.location.origin + window.location.pathname; if (cleanUrl.endsWith('/index.html')) cleanUrl = cleanUrl.replace('/index.html', '/'); if (!cleanUrl.endsWith('/')) cleanUrl += '/'; const url = `https://www.dropbox.com/oauth2/authorize?client_id=${DROPBOX_APP_KEY}&response_type=token&redirect_uri=${encodeURIComponent(cleanUrl)}`; window.location.href = url; }
+function disconnectDropbox() { safeStorage.removeItem('dropboxToken'); dbx = null; hideModal(); }
+async function syncDropbox() { 
+  if(!dbx) return; 
+  try { 
+    // === SYNC TRIPS ===
+    let cloud = []; 
+    try { 
+      const dl = await dbx.filesDownload({path: BACKUP_FILENAME}); 
+      cloud = JSON.parse(await dl.result.fileBlob.text()); 
+    } catch(e) { 
+      if(e.status!==409) throw e; 
+    } 
+    const map = new Map(trips.map(t=>[t.id,t])); 
+    cloud.forEach(t => { 
+      const loc = map.get(t.id); 
+      if(!loc || (t.lastModified > loc.lastModified)) map.set(t.id, t); 
+    }); 
+    trips = Array.from(map.values()); 
+    safeStorage.setItem('bydSharkTrips', JSON.stringify(trips)); 
+    await dbx.filesUpload({path: BACKUP_FILENAME, contents: JSON.stringify(trips), mode:'overwrite'}); 
+    
+    // === SYNC SETTINGS ===
+    let cloudSettings = null;
+    try {
+      const dlSettings = await dbx.filesDownload({path: SETTINGS_FILENAME});
+      cloudSettings = JSON.parse(await dlSettings.result.fileBlob.text());
+    } catch(e) {
+      if (e.status !== 409) throw e;
+    }
+    
+    if (cloudSettings && cloudSettings.lastModified > (appSettings.lastModified || 0)) {
+      appSettings = { ...DEFAULT_SETTINGS, ...cloudSettings };
+      safeStorage.setItem('bydSharkSettings', JSON.stringify(appSettings));
+    } else {
+      await dbx.filesUpload({path: SETTINGS_FILENAME, contents: JSON.stringify(appSettings), mode:'overwrite'});
+    }
+    
+    alert("Synced!"); 
+  } catch(e) { 
+    if (e && (e.status === 401 || (e.message && e.message.includes("401")))) {
+      disconnectDropbox();
+      alert("Dropbox session expired. Please reconnect.");
+    } else {
+      alert("Sync Error: " + e.message); 
+    }
+  } 
+  hideModal(); 
+  renderTripsView(); 
+}
+</script>
+</body>
+</html>
