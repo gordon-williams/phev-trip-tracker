@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker (Mobile) - v1.0 Build 1003
+  PHEV Trip Tracker (Mobile) - v1.0 Build 1005
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -234,7 +234,7 @@ window.onerror = function(msg, url, line) { return false; };
 <div id="mainContent">
   <div id="viewTrips" class="list-container">
     <div id="tripListContainer"></div>
-    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1003 • MIT License • GitHub</div>
+    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1005 • MIT License • GitHub</div>
     <div style="height: 20px;"></div>
   </div>
 
@@ -511,7 +511,7 @@ function renderTripsView() {
     const tripCost = s.totalEVCost + s.effectiveFuelCost;
     const vehicleBadge = specs.name ? `<span style="font-size:10px; color:var(--text-secondary); margin-left:6px;">${escapeHtml(specs.name)}</span>` : '';
     return `
-    <div class="ios-card trip-row" data-trip-id="${t.id}">
+    <div class="ios-card trip-row" data-trip-id="${t.id}" onclick="openTrip('${t.id}')">
       <div class="trip-main">
         <div class="trip-title">${escapeHtml(t.name)}${vehicleBadge}</div>
         <div class="trip-subtitle">${formatDate(t.startDate)} • ${t.entries.length} stops • ${s.distance.toFixed(0)}km</div>
@@ -520,11 +520,6 @@ function renderTripsView() {
       <div style="color:#C7C7CC; margin-left:10px;">›</div>
     </div>`;
   }).join('');
-
-  // Add click handlers using event delegation
-  list.querySelectorAll('.trip-row').forEach(card => {
-    card.onclick = () => openTrip(card.dataset.tripId);
-  });
 }
 
 function openTrip(id) {

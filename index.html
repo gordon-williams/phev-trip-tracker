@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker - v1.0 Build 1004
+  PHEV Trip Tracker - v1.0 Build 1005
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -929,7 +929,7 @@
 		
 		<!-- Version footer -->
 		<div style="text-align:center; margin-top:20px; font-size:13px; color:var(--text-muted);">
-		  v1.0 Build 1004 • MIT License<br>
+		  v1.0 Build 1005 • MIT License<br>
 		  <a href="https://github.com/gordon-williams/phev-trip-tracker" target="_blank" style="color:var(--text-muted);">github.com/gordon-williams/phev-trip-tracker</a>
 		</div>
 		
@@ -1221,7 +1221,7 @@ function renderTripsView() {
     const tripCost = s.totalEVCost + s.effectiveFuelCost;
     const vehicleName = t.vehicleSpecs?.name || 'Unknown';
     return `
-    <div class="trip-card" data-trip-id="${t.id}">
+    <div class="trip-card" data-trip-id="${t.id}" onclick="openTrip('${t.id}')">
       <div>
         <div class="trip-name">${escapeHtml(t.name)}</div>
         <div class="trip-meta">${formatDate(t.startDate)} • ${t.entries.length} stops • ${s.distance.toFixed(0)}km</div>
@@ -1233,11 +1233,6 @@ function renderTripsView() {
       </div>
     </div>`;
   }).join('');
-
-  // Add click handlers using event delegation
-  list.querySelectorAll('.trip-card').forEach(card => {
-    card.onclick = () => openTrip(card.dataset.tripId);
-  });
 }
 
 function openTrip(id) {
