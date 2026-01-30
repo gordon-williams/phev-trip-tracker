@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker - v1.0 Build 1002
+  PHEV Trip Tracker - v1.0 Build 1003
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -929,7 +929,7 @@
 		
 		<!-- Version footer -->
 		<div style="text-align:center; margin-top:20px; font-size:13px; color:var(--text-muted);">
-		  v1.0 Build 1002 • MIT License<br>
+		  v1.0 Build 1003 • MIT License<br>
 		  <a href="https://github.com/gordon-williams/phev-trip-tracker" target="_blank" style="color:var(--text-muted);">github.com/gordon-williams/phev-trip-tracker</a>
 		</div>
 		
@@ -2226,13 +2226,23 @@ function editVehicle(idx) {
 
     if (isNew) {
       appSettings.vehicles.push(newVehicle);
+      saveSettings();
+      showSettingsForm('vehicles');
+      showToast('Vehicle added');
     } else {
+      const oldName = appSettings.vehicles[idx].name;
       appSettings.vehicles[idx] = newVehicle;
-    }
+      saveSettings();
 
-    saveSettings();
-    showSettingsForm('vehicles');
-    showToast(isNew ? 'Vehicle added' : 'Vehicle updated');
+      // Find trips using this vehicle and offer to update them
+      const affectedTrips = trips.filter(t => t.vehicleSpecs?.name === oldName || t.vehicleSpecs?.name === newVehicle.name);
+      if (affectedTrips.length > 0) {
+        showUpdateTripsPrompt(newVehicle, affectedTrips);
+      } else {
+        showSettingsForm('vehicles');
+        showToast('Vehicle updated');
+      }
+    }
   };
 }
 
@@ -2242,6 +2252,57 @@ function toggleVehicleFuelFields() {
   if (container) {
     container.style.display = tankTotal === 0 ? 'none' : 'contents';
   }
+}
+
+function showUpdateTripsPrompt(vehicle, affectedTrips) {
+  const tripList = affectedTrips.map(t => `
+    <label style="display:flex; align-items:center; gap:8px; padding:8px 0; border-bottom:1px solid var(--border);">
+      <input type="checkbox" class="trip-update-cb" data-trip-id="${t.id}" checked>
+      <span>${escapeHtml(t.name)}</span>
+      <span style="color:var(--text-muted); font-size:12px; margin-left:auto;">${formatDate(t.startDate)}</span>
+    </label>
+  `).join('');
+
+  showOverlay(`
+    <div class="card" style="width:500px; max-width:95vw;">
+      <h2 class="card-title">Update Trips?</h2>
+      <p style="color:var(--text-muted); margin-bottom:16px;">
+        ${affectedTrips.length} trip${affectedTrips.length > 1 ? 's' : ''} use${affectedTrips.length === 1 ? 's' : ''} this vehicle.
+        Update them with the new settings?
+      </p>
+      <div style="max-height:300px; overflow-y:auto; margin-bottom:16px;">
+        ${tripList}
+      </div>
+      <div style="display:flex; gap:12px;">
+        <button class="btn btn-green" style="flex:1;" onclick="applyVehicleToTrips('${escapeHtml(vehicle.name)}')">Update Selected</button>
+        <button class="btn btn-secondary" style="flex:1;" onclick="showSettingsForm('vehicles'); showToast('Vehicle updated');">Skip</button>
+      </div>
+    </div>
+  `);
+}
+
+function applyVehicleToTrips(vehicleName) {
+  const vehicle = appSettings.vehicles.find(v => v.name === vehicleName);
+  if (!vehicle) return;
+
+  const checkboxes = document.querySelectorAll('.trip-update-cb:checked');
+  let updated = 0;
+
+  checkboxes.forEach(cb => {
+    const tripId = cb.dataset.tripId;
+    const trip = trips.find(t => String(t.id) === String(tripId));
+    if (trip) {
+      trip.vehicleSpecs = { ...vehicle };
+      updated++;
+    }
+  });
+
+  if (updated > 0) {
+    safeStorage.setItem('bydSharkTrips', JSON.stringify(trips));
+  }
+
+  showSettingsForm('vehicles');
+  showToast(`Updated ${updated} trip${updated !== 1 ? 's' : ''}`);
 }
 
 function deleteVehicle(idx) {

@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker (Mobile) - v1.0 Build 1002
+  PHEV Trip Tracker (Mobile) - v1.0 Build 1003
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -234,7 +234,7 @@ window.onerror = function(msg, url, line) { return false; };
 <div id="mainContent">
   <div id="viewTrips" class="list-container">
     <div id="tripListContainer"></div>
-    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1002 • MIT License • GitHub</div>
+    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1003 • MIT License • GitHub</div>
     <div style="height: 20px;"></div>
   </div>
 
@@ -1333,13 +1333,73 @@ function editVehicle(idx) {
 
     if (isNew) {
       appSettings.vehicles.push(newVehicle);
+      saveSettings();
+      showVehiclesForm();
     } else {
+      const oldName = appSettings.vehicles[idx].name;
       appSettings.vehicles[idx] = newVehicle;
-    }
+      saveSettings();
 
-    saveSettings();
-    showVehiclesForm();
+      // Find trips using this vehicle and offer to update them
+      const affectedTrips = trips.filter(t => t.vehicleSpecs?.name === oldName || t.vehicleSpecs?.name === newVehicle.name);
+      if (affectedTrips.length > 0) {
+        showUpdateTripsPrompt(newVehicle, affectedTrips);
+      } else {
+        showVehiclesForm();
+      }
+    }
   };
+}
+
+function showUpdateTripsPrompt(vehicle, affectedTrips) {
+  const tripList = affectedTrips.map(t => `
+    <label class="ios-card" style="display:flex; align-items:center; gap:12px; padding:12px 16px;">
+      <input type="checkbox" class="trip-update-cb" data-trip-id="${t.id}" checked>
+      <span style="flex:1;">${escapeHtml(t.name)}</span>
+      <span style="color:var(--text-secondary); font-size:13px;">${formatDate(t.startDate)}</span>
+    </label>
+  `).join('');
+
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Update Trips?</div>
+    </div>
+    <p style="color:var(--text-secondary); margin:0 0 16px 0; font-size:14px;">
+      ${affectedTrips.length} trip${affectedTrips.length > 1 ? 's' : ''} use${affectedTrips.length === 1 ? 's' : ''} this vehicle.
+      Update them with the new settings?
+    </p>
+    <div style="max-height:250px; overflow-y:auto; margin:0 -20px 16px -20px; padding:0 20px;">
+      ${tripList}
+    </div>
+    <div style="display:flex; gap:12px;">
+      <button class="ios-btn" style="flex:1; background:var(--success); color:white;" onclick="applyVehicleToTrips('${escapeHtml(vehicle.name)}')">Update Selected</button>
+      <button class="ios-btn" style="flex:1;" onclick="hideModal(); showVehiclesForm();">Skip</button>
+    </div>
+  `);
+}
+
+function applyVehicleToTrips(vehicleName) {
+  const vehicle = appSettings.vehicles.find(v => v.name === vehicleName);
+  if (!vehicle) return;
+
+  const checkboxes = document.querySelectorAll('.trip-update-cb:checked');
+  let updated = 0;
+
+  checkboxes.forEach(cb => {
+    const tripId = cb.dataset.tripId;
+    const trip = trips.find(t => String(t.id) === String(tripId));
+    if (trip) {
+      trip.vehicleSpecs = { ...vehicle };
+      updated++;
+    }
+  });
+
+  if (updated > 0) {
+    safeStorage.setItem('bydSharkTrips', JSON.stringify(trips));
+  }
+
+  hideModal();
+  showVehiclesForm();
 }
 
 function toggleVehicleFuelFields() {
