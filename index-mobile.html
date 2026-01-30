@@ -506,8 +506,8 @@ function renderTripsView() {
   list.innerHTML = visibleTrips.map(t => {
     const s = calculateTripSummary(t);
     const specs = getTripVehicleSpecs(t);
-    // Trip cost using effective fuel cost (purchased if available, else consumed × reference price)
-    const tripCost = s.chargingCost + s.effectiveFuelCost;
+    // Trip cost using total EV cost (home + DC) plus effective fuel cost
+    const tripCost = s.totalEVCost + s.effectiveFuelCost;
     const vehicleBadge = specs.name ? `<span style="font-size:10px; color:var(--text-secondary); margin-left:6px;">${escapeHtml(specs.name)}</span>` : '';
     return `
     <div class="ios-card trip-row" data-trip-id="${t.id}">
@@ -556,8 +556,8 @@ function renderTripDetails() {
 
   const s = calculateTripSummary(trip);
 
-  // Trip total cost uses effectiveFuelCost (purchased if available, else consumed × reference price)
-  const tripTotalCost = s.chargingCost + s.effectiveFuelCost;
+  // Trip total cost uses total EV cost (home + DC) plus effective fuel cost
+  const tripTotalCost = s.totalEVCost + s.effectiveFuelCost;
 
   // For comparison vehicle, use settings price (hypothetical comparison)
   const comparisonFuelPrice = appSettings.fuelPrices[appSettings.comparisonFuelType] || 1.80;
@@ -588,8 +588,13 @@ function renderTripDetails() {
     ? `${s.totalFuel.toFixed(1)}L purchased`
     : `${s.fuelConsumed.toFixed(1)}L @ $${s.referenceFuelPrice.toFixed(2)}`;
 
+  // EV cost breakdown: home charging + DC charging
+  const evCostDetail = s.evFromCharges > 0
+    ? `Home $${s.homeChargingCost.toFixed(2)} + DC $${s.chargingCost.toFixed(2)}`
+    : `${s.evFromHome.toFixed(1)} kWh @ $${s.homeChargingRate.toFixed(2)}`;
+
   document.getElementById('perfStats').innerHTML = `
-    <div class="stat-box"><div class="stat-label">EV Cost</div><div class="stat-value">$${s.chargingCost.toFixed(2)}</div></div>
+    <div class="stat-box"><div class="stat-label">EV Cost</div><div class="stat-value">$${s.totalEVCost.toFixed(2)}</div><div style="font-size:10px; color:var(--text-secondary);">${evCostDetail}</div></div>
     <div class="stat-box"><div class="stat-label">Fuel Cost</div><div class="stat-value">$${s.effectiveFuelCost.toFixed(2)}</div><div style="font-size:10px; color:var(--text-secondary);">${fuelCostDetail}</div></div>
     <div class="stat-box"><div class="stat-label">vs ${escapeHtml(compLabel)}</div><div class="stat-value">$${eqPetrolCost.toFixed(2)}</div><div style="font-size:10px; color:var(--text-secondary);">${eqLitres.toFixed(1)}L</div></div>
     <div class="stat-box" style="background:${savings > 0 ? 'rgba(52,199,89,0.15)' : 'var(--card-bg)'};"><div class="stat-label">Savings</div><div class="stat-value" style="color:${savings > 0 ? 'var(--success)' : 'var(--text-primary)'};">${savings >= 0 ? '+' : ''}$${savings.toFixed(2)}</div></div>
@@ -1667,14 +1672,24 @@ function calculateTripSummary(trip) {
     const effectiveFuelCost = fuelCost > 0 ? fuelCost : consumedFuelCost;
     const chargingCost = totalCost - fuelCost;
 
+    // Calculate home charging cost (EV energy not from DC chargers)
+    const homeChargingRate = specs.homeChargingCost || 0.32;
+    const evFromHome = Math.max(0, totalEV - evFromCharges);
+    const homeChargingCost = evFromHome * homeChargingRate;
+    const totalEVCost = homeChargingCost + chargingCost;
+
     return {
         distance,
-        totalCost: chargingCost + effectiveFuelCost,
-        chargingCost,
+        totalCost: totalEVCost + effectiveFuelCost,
+        chargingCost,                      // DC charging cost only
+        homeChargingCost,                  // Home charging cost (EV from home × rate)
+        totalEVCost,                       // Total EV cost (home + DC)
+        evFromHome,                        // kWh from home charging
         fuelCost,                          // Fuel purchased cost (from refuelling entries)
         consumedFuelCost,                  // Fuel consumed cost (using reference price)
         effectiveFuelCost,                 // The one to use for display (purchased if available, else consumed)
         referenceFuelPrice,                // The price used for consumed fuel calc
+        homeChargingRate,                  // Home charging rate used
         totalEVEnergy: totalEV,            // Total EV including camp PTL
         totalFuel: fuelLitres,             // Fuel added at pumps
         fuelConsumed: totalFuelConsumed,   // Total fuel consumed including camp
