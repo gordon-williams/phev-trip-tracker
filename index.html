@@ -1026,7 +1026,7 @@ const DEFAULT_VEHICLE_SPECS = {
   batteryDegradation: 0,    // % degradation (0 = new, 20 = 20% degraded)
   fuelTankTotal: 60,
   fuelTankReserve: 10,
-  engineEfficiency: 40,
+  engineEfficiency: 37,
   maxFuelRangeKm: 700,       // Range shown at 100% fuel
   fuelGaugeCurve: 0.90,      // Exponent for km-to-% conversion (1.0 = linear)
   homeChargingCost: 0.32
@@ -2135,7 +2135,7 @@ function editVehicle(idx) {
     batteryDegradation: 0,
     fuelTankTotal: 60,
     fuelTankReserve: 10,
-    engineEfficiency: 40,
+    engineEfficiency: 37,
     maxFuelRangeKm: 700,
     fuelGaugeCurve: 0.90,
     homeChargingCost: 0.32
@@ -2817,7 +2817,7 @@ function calculateTripEconomics(trip, summary) {
   // "No DC" scenario - ICE would need to generate the DC charging energy
   // Energy needed: dcEnergy (kWh)
   // Fuel required: dcEnergy / efficiency / PETROL_KWH_PER_LITRE
-  const engineEfficiency = specs.engineEfficiency || 0.40;
+  const engineEfficiency = specs.engineEfficiency || 0.37;
   const fuelToGenerateDC = dcEnergy / engineEfficiency / PETROL_KWH_PER_LITRE;
   const noDCFuelCost = fuelToGenerateDC * fuelPrice;
 
