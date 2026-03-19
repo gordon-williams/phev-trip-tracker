@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker (Mobile) - v1.0 Build 1008
+  PHEV Trip Tracker (Mobile) - v1.0 Build 1009
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -234,7 +234,7 @@ window.onerror = function(msg, url, line) { return false; };
 <div id="mainContent">
   <div id="viewTrips" class="list-container">
     <div id="tripListContainer"></div>
-    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1008 • MIT License • GitHub</div>
+    <div class="app-footer" onclick="showInstallGuide()">v1.0 Build 1009 • MIT License • GitHub</div>
     <div style="height: 20px;"></div>
   </div>
 
@@ -275,7 +275,7 @@ const DEFAULT_VEHICLE_SPECS = {
   batteryDegradation: 0,    // % degradation (0 = new, 20 = 20% degraded)
   fuelTankTotal: 60,
   fuelTankReserve: 10,
-  engineEfficiency: 43,
+  engineEfficiency: 40,
   maxFuelRangeKm: 700,
   fuelGaugeCurve: 0.90,      // Exponent for km-to-% conversion (1.0 = linear)
   homeChargingCost: 0.32
@@ -1125,6 +1125,7 @@ function showSyncMenu() {
       <button class="modal-btn" onclick="document.getElementById('fileInput').click()">⬆️ Restore JSON</button>
       <input type="file" id="fileInput" style="display:none" onchange="restoreLocal(this)">
       ${!isLocalMode && dbx ? `<button class="modal-btn destructive" onclick="disconnectDropbox()">Disconnect</button>` : ''}
+      <button class="modal-btn destructive" onclick="purgeDeletedTrips()">Purge Deleted</button>
       <button class="modal-btn destructive" onclick="clearAll()">Clear All Data</button>
     </div>`);
 }
@@ -1258,7 +1259,7 @@ function editVehicle(idx) {
     batteryDegradation: 0,
     fuelTankTotal: 60,
     fuelTankReserve: 10,
-    engineEfficiency: 43,
+    engineEfficiency: 40,
     maxFuelRangeKm: 700,
     homeChargingCost: 0.32
   } : { ...appSettings.vehicles[idx] };
@@ -1777,7 +1778,7 @@ function calculateTripEconomics(trip, summary) {
   }
 
   // "No DC" scenario - ICE would need to generate the DC charging energy
-  const engineEfficiency = specs.engineEfficiency || 0.43;
+  const engineEfficiency = specs.engineEfficiency || 0.40;
   const fuelToGenerateDC = dcEnergy / engineEfficiency / PETROL_KWH_PER_LITRE;
   const noDCFuelCost = fuelToGenerateDC * fuelPrice;
 
@@ -2224,6 +2225,40 @@ function finishDeleteEntry(idx) {
   renderTripDetails();
 }
 
+function purgeDeletedTrips() {
+  const deleted = trips.filter(t => t.deleted);
+  if (deleted.length === 0) { alert('No deleted trips to purge.'); return; }
+  const listHtml = deleted.map(t => {
+    const entries = Array.isArray(t.entries) ? t.entries.length : 0;
+    return `<li><strong>${escapeHtml(t.name || 'Unnamed')}</strong> — ${t.startDate || 'No date'}, ${entries} entr${entries === 1 ? 'y' : 'ies'}</li>`;
+  }).join('');
+  showModal(`
+    <div class="sheet-header">
+      <div class="sheet-title">Purge Deleted Trips</div>
+      <button class="sheet-close" onclick="hideModal()">Close</button>
+    </div>
+    <div style="padding:10px; display:flex; flex-direction:column; gap:12px;">
+      <div style="font-size:15px;">The following <strong>${deleted.length}</strong> trip${deleted.length === 1 ? '' : 's'} will be permanently removed:</div>
+      <ul style="text-align:left; max-height:200px; overflow-y:auto; margin:0; padding-left:20px; font-size:14px;">${listHtml}</ul>
+      <div style="font-size:13px; color:#888;">This cannot be undone.</div>
+      <button class="modal-btn" onclick="exportPurgedTrips()">Export First</button>
+      <button class="modal-btn destructive" onclick="finishPurgeDeleted()">Purge Now</button>
+    </div>
+  `);
+}
+function exportPurgedTrips() {
+  const deleted = trips.filter(t => t.deleted);
+  const backup = { version: 3, trips: deleted, exportDate: new Date().toISOString(), note: 'Purged deleted trips' };
+  const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'BYD-Purged-Trips.json';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+function finishPurgeDeleted() {
+  trips = trips.filter(t => !t.deleted);
+  safeStorage.setItem('bydSharkTrips', JSON.stringify(trips));
+  hideModal();
+  alert('Deleted trips purged.');
+}
 function clearAll() { if(confirm("Delete EVERYTHING?")) { safeStorage.removeItem('bydSharkTrips'); trips = []; hideModal(); renderTripsView(); } }
 function downloadLocal() {
   const backup = { version: 3, trips: trips, settings: appSettings, exportDate: new Date().toISOString() };
@@ -2236,31 +2271,57 @@ function downloadLocal() {
   a.click();
   document.body.removeChild(a);
 }
+function validateTrip(trip, index) {
+  const errors = [];
+  if (!trip || typeof trip !== 'object') return [`Trip ${index + 1}: not a valid object`];
+  if (!trip.id) errors.push(`Trip ${index + 1}: missing id`);
+  if (!trip.name || typeof trip.name !== 'string') errors.push(`Trip ${index + 1}: missing or invalid name`);
+  if (!Array.isArray(trip.entries)) errors.push(`Trip ${index + 1} "${trip.name || '?'}": entries is not an array`);
+  if (trip.entries) {
+    trip.entries.forEach((entry, i) => {
+      if (!entry || typeof entry !== 'object') errors.push(`Trip "${trip.name || '?'}" entry ${i + 1}: not a valid object`);
+      else if (!['waypoint','charging','fuel','camp'].includes(entry.type)) errors.push(`Trip "${trip.name || '?'}" entry ${i + 1}: unknown type "${entry.type}"`);
+    });
+  }
+  return errors;
+}
 function restoreLocal(input) {
   const reader = new FileReader();
   reader.onload = e => {
-    const data = JSON.parse(e.target.result);
+    let data;
+    try { data = JSON.parse(e.target.result); } catch (err) { alert('Import failed: invalid JSON.\n' + err.message); return; }
+
+    let importedTrips;
     if (Array.isArray(data)) {
-      trips = data;
-    } else if (data.trips) {
-      trips = data.trips;
+      importedTrips = data;
+    } else if (data && Array.isArray(data.trips)) {
+      importedTrips = data.trips;
       if (data.settings) {
         appSettings = { ...DEFAULT_SETTINGS, ...data.settings };
-        // Ensure vehicles array exists (migration for v2 backups)
         if (!appSettings.vehicles || appSettings.vehicles.length === 0) {
           appSettings.vehicles = [{ ...DEFAULT_VEHICLE_SPECS }];
           appSettings.lastUsedVehicle = DEFAULT_VEHICLE_SPECS.name;
         }
         safeStorage.setItem('bydSharkSettings', JSON.stringify(appSettings));
       }
+    } else {
+      alert('Import failed: file does not contain a valid trips array.');
+      return;
     }
-    // Migrate trips without vehicleSpecs
-    trips.forEach(trip => {
-      if (!trip.vehicleSpecs) {
-        trip.vehicleSpecs = { ...DEFAULT_VEHICLE_SPECS };
-      }
-    });
+
+    const allErrors = [];
+    importedTrips.forEach((trip, i) => allErrors.push(...validateTrip(trip, i)));
+    if (allErrors.length > 0) {
+      const msg = `Found ${allErrors.length} issue${allErrors.length === 1 ? '' : 's'}:\n\n` +
+        allErrors.slice(0, 10).join('\n') + (allErrors.length > 10 ? `\n...and ${allErrors.length - 10} more` : '') +
+        '\n\nImport anyway?';
+      if (!confirm(msg)) return;
+    }
+
+    trips = importedTrips;
+    trips.forEach(trip => { if (!trip.vehicleSpecs) trip.vehicleSpecs = { ...DEFAULT_VEHICLE_SPECS }; });
     safeStorage.setItem('bydSharkTrips', JSON.stringify(trips));
+    alert(`Restored ${trips.length} trip${trips.length === 1 ? '' : 's'}.`);
     hideModal();
     renderTripsView();
   };

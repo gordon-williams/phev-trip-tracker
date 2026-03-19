@@ -1,6 +1,6 @@
 <!doctype html>
 <!--
-  PHEV Trip Tracker - v1.0 Build 1008
+  PHEV Trip Tracker - v1.0 Build 1009
   https://github.com/gordon-williams/phev-trip-tracker
 
   - NEW: Home charging cost included in Total EV Cost
@@ -929,7 +929,7 @@
 		
 		<!-- Version footer -->
 		<div style="text-align:center; margin-top:20px; font-size:13px; color:var(--text-muted);">
-		  v1.0 Build 1008 • MIT License<br>
+		  v1.0 Build 1009 • MIT License<br>
 		  <a href="https://github.com/gordon-williams/phev-trip-tracker" target="_blank" style="color:var(--text-muted);">github.com/gordon-williams/phev-trip-tracker</a>
 		</div>
 		
@@ -1026,7 +1026,7 @@ const DEFAULT_VEHICLE_SPECS = {
   batteryDegradation: 0,    // % degradation (0 = new, 20 = 20% degraded)
   fuelTankTotal: 60,
   fuelTankReserve: 10,
-  engineEfficiency: 43,
+  engineEfficiency: 40,
   maxFuelRangeKm: 700,       // Range shown at 100% fuel
   fuelGaugeCurve: 0.90,      // Exponent for km-to-% conversion (1.0 = linear)
   homeChargingCost: 0.32
@@ -1928,6 +1928,7 @@ function showSyncMenu() {
         <div class="data-modal-row">
           <button class="btn btn-secondary" onclick="downloadLocal()">Backup JSON</button>
           <button class="btn btn-secondary" onclick="document.getElementById('f_restore').click()">Restore JSON</button>
+          <button class="btn btn-danger" onclick="purgeDeletedTrips()">Purge Deleted</button>
           <button class="btn btn-danger" onclick="clearAllData()">Reset All</button>
         </div>
 
@@ -2134,7 +2135,7 @@ function editVehicle(idx) {
     batteryDegradation: 0,
     fuelTankTotal: 60,
     fuelTankReserve: 10,
-    engineEfficiency: 43,
+    engineEfficiency: 40,
     maxFuelRangeKm: 700,
     fuelGaugeCurve: 0.90,
     homeChargingCost: 0.32
@@ -2539,6 +2540,52 @@ function finishDeleteEntry(idx) {
 
 function deleteEntryFromForm() { deleteEntry(editingEntryIndex); hideOverlay(); }
 
+function purgeDeletedTrips() {
+  const deleted = trips.filter(t => t.deleted);
+  if (deleted.length === 0) {
+    alert('No deleted trips to purge.');
+    return;
+  }
+  const listHtml = deleted.map(t => {
+    const date = t.startDate || 'No date';
+    const entries = Array.isArray(t.entries) ? t.entries.length : 0;
+    return `<li><strong>${escapeHtml(t.name || 'Unnamed')}</strong> — ${date}, ${entries} entr${entries === 1 ? 'y' : 'ies'}</li>`;
+  }).join('');
+
+  showOverlay(`
+    <div class="card form-modal" style="box-shadow:none; margin:0; border:none;">
+      <h2 class="card-title">Purge Deleted Trips</h2>
+      <p>The following <strong>${deleted.length}</strong> trip${deleted.length === 1 ? '' : 's'} will be permanently removed:</p>
+      <ul style="text-align:left; max-height:200px; overflow-y:auto; margin:10px 0;">${listHtml}</ul>
+      <p>This cannot be undone.</p>
+      <div style="display:flex; gap:10px; margin-top:20px; flex-wrap:wrap;">
+        <button class="btn btn-secondary" onclick="exportPurgedTrips()">Export First</button>
+        <button class="btn btn-danger" onclick="finishPurgeDeleted()">Purge Now</button>
+        <button class="btn btn-secondary" onclick="hideOverlay()">Cancel</button>
+      </div>
+    </div>
+  `);
+}
+
+function exportPurgedTrips() {
+  const deleted = trips.filter(t => t.deleted);
+  const backup = { version: 3, trips: deleted, exportDate: new Date().toISOString(), note: 'Purged deleted trips' };
+  const b = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(b);
+  a.download = 'BYD-Purged-Trips.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function finishPurgeDeleted() {
+  trips = trips.filter(t => !t.deleted);
+  _saveAllToLocalStorage();
+  hideOverlay();
+  alert('Deleted trips purged.');
+}
+
 function clearAllData() {
   showOverlay(`
     <div class="card form-modal" style="box-shadow:none; margin:0; border:none;">
@@ -2770,7 +2817,7 @@ function calculateTripEconomics(trip, summary) {
   // "No DC" scenario - ICE would need to generate the DC charging energy
   // Energy needed: dcEnergy (kWh)
   // Fuel required: dcEnergy / efficiency / PETROL_KWH_PER_LITRE
-  const engineEfficiency = specs.engineEfficiency || 0.43;
+  const engineEfficiency = specs.engineEfficiency || 0.40;
   const fuelToGenerateDC = dcEnergy / engineEfficiency / PETROL_KWH_PER_LITRE;
   const noDCFuelCost = fuelToGenerateDC * fuelPrice;
 
@@ -3225,18 +3272,46 @@ function downloadLocal() {
   document.body.removeChild(a);
 }
 
+function validateTrip(trip, index) {
+  const errors = [];
+  if (!trip || typeof trip !== 'object') {
+    return [`Trip ${index + 1}: not a valid object`];
+  }
+  if (!trip.id) errors.push(`Trip ${index + 1}: missing id`);
+  if (!trip.name || typeof trip.name !== 'string') errors.push(`Trip ${index + 1}: missing or invalid name`);
+  if (!Array.isArray(trip.entries)) errors.push(`Trip ${index + 1} "${trip.name || '?'}": entries is not an array`);
+  if (trip.entries) {
+    trip.entries.forEach((entry, i) => {
+      if (!entry || typeof entry !== 'object') {
+        errors.push(`Trip "${trip.name || '?'}" entry ${i + 1}: not a valid object`);
+      } else if (!['waypoint','charging','fuel','camp'].includes(entry.type)) {
+        errors.push(`Trip "${trip.name || '?'}" entry ${i + 1}: unknown type "${entry.type}"`);
+      }
+    });
+  }
+  return errors;
+}
+
 function restoreLocal(input) {
   const r = new FileReader();
   r.onload = e => {
-    const data = JSON.parse(e.target.result);
+    let data;
+    try {
+      data = JSON.parse(e.target.result);
+    } catch (err) {
+      alert('Import failed: invalid JSON file.\n' + err.message);
+      return;
+    }
+
+    let importedTrips;
 
     // Handle both old format (array of trips) and new format (object with trips + settings)
     if (Array.isArray(data)) {
       // Old format - trips only
-      trips = data;
-    } else if (data.trips) {
+      importedTrips = data;
+    } else if (data && Array.isArray(data.trips)) {
       // New format - combined backup
-      trips = data.trips;
+      importedTrips = data.trips;
       if (data.settings) {
         appSettings = { ...DEFAULT_SETTINGS, ...data.settings };
         // Ensure vehicles array exists (migration for v2 backups)
@@ -3246,7 +3321,26 @@ function restoreLocal(input) {
         }
         safeStorage.setItem('bydSharkSettings', JSON.stringify(appSettings));
       }
+    } else {
+      alert('Import failed: file does not contain a valid trips array.');
+      return;
     }
+
+    // Validate each trip
+    const allErrors = [];
+    importedTrips.forEach((trip, i) => {
+      allErrors.push(...validateTrip(trip, i));
+    });
+
+    if (allErrors.length > 0) {
+      const msg = `Import found ${allErrors.length} issue${allErrors.length === 1 ? '' : 's'}:\n\n` +
+        allErrors.slice(0, 10).join('\n') +
+        (allErrors.length > 10 ? `\n...and ${allErrors.length - 10} more` : '') +
+        '\n\nImport anyway?';
+      if (!confirm(msg)) return;
+    }
+
+    trips = importedTrips;
 
     // Migrate trips without vehicleSpecs
     trips.forEach(trip => {
@@ -3256,7 +3350,7 @@ function restoreLocal(input) {
     });
 
     _saveAllToLocalStorage();
-    alert("Restored!");
+    alert(`Restored ${trips.length} trip${trips.length === 1 ? '' : 's'}.`);
     showTripsView();
     hideModal();
   };
