@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BYD Energy Database Viewer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0d1117;
+    color: #e6edf3;
+    padding: 20px;
+    max-width: 100%;
+    overflow-x: auto;
+}
+h1 { font-size: 1.5em; margin-bottom: 4px; color: #58a6ff; }
+.subtitle { color: #8b949e; font-size: 0.85em; margin-bottom: 20px; }
+.security-note {
+    background: #1a2332;
+    border: 1px solid #1f6feb;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 0.85em;
+    color: #8b949e;
+}
+.security-note strong { color: #58a6ff; }
+.upload-area {
+    border: 2px dashed #30363d;
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    margin-bottom: 20px;
+    transition: border-color 0.2s;
+}
+.upload-area:hover { border-color: #58a6ff; }
+.upload-area label {
+    display: inline-block;
+    background: #238636;
+    color: white;
+    padding: 12px 32px;
+    border-radius: 8px;
+    font-size: 1.1em;
+    font-weight: 600;
+    cursor: pointer;
+}
+.upload-area label:active { background: #2ea043; }
+.upload-area input { display: none; }
+.upload-area p { margin-top: 12px; color: #8b949e; font-size: 0.85em; }
+.hint {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 20px;
+    font-size: 0.8em;
+    color: #8b949e;
+}
+.hint code {
+    background: #0d1117;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #f0883e;
+    font-family: monospace;
+}
+#status {
+    padding: 10px;
+    margin-bottom: 16px;
+    border-radius: 8px;
+    display: none;
+}
+#status.info { display: block; background: #1a2332; border: 1px solid #1f6feb; color: #58a6ff; }
+#status.error { display: block; background: #2d1117; border: 1px solid #da3633; color: #f85149; }
+#status.success { display: block; background: #122117; border: 1px solid #238636; color: #3fb950; }
+#results { margin-top: 16px; }
+.table-section {
+    margin-bottom: 24px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    overflow: hidden;
+}
+.table-header {
+    padding: 12px 16px;
+    background: #1a2332;
+    border-bottom: 1px solid #30363d;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+}
+.table-header h3 { color: #58a6ff; font-size: 1em; }
+.table-header .count { color: #8b949e; font-size: 0.85em; }
+.table-header .toggle { color: #8b949e; font-size: 1.2em; }
+.table-content { overflow-x: auto; display: none; }
+.table-content.open { display: block; }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8em;
+}
+th {
+    background: #0d1117;
+    color: #f0883e;
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid #30363d;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+}
+td {
+    padding: 6px 12px;
+    border-bottom: 1px solid #21262d;
+    white-space: nowrap;
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+tr:hover td { background: #1a2332; }
+.schema-info {
+    padding: 8px 16px;
+    font-size: 0.75em;
+    color: #8b949e;
+    font-family: monospace;
+    background: #0d1117;
+    border-top: 1px solid #21262d;
+}
+.export-btn {
+    display: inline-block;
+    background: #1f6feb;
+    color: white;
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: none;
+    font-size: 0.85em;
+    cursor: pointer;
+    margin: 8px;
+}
+.export-btn:active { background: #388bfd; }
+.summary {
+    background: #122117;
+    border: 1px solid #238636;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 20px;
+}
+.summary h3 { color: #3fb950; margin-bottom: 8px; }
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 8px;
+}
+.summary-item { color: #e6edf3; font-size: 0.9em; }
+.summary-item span { color: #8b949e; }
+</style>
+</head>
+<body>
+
+<h1>BYD Energy Database Viewer</h1>
+<p class="subtitle">Extract and view trip data from your BYD head unit</p>
+
+<div class="security-note">
+    <strong>Privacy:</strong> This page runs entirely in your browser. No data is uploaded to any server.
+    The database file is read locally using JavaScript. You can verify this by disconnecting from the internet before selecting the file.
+</div>
+
+<div class="upload-area">
+    <label for="fileInput">Select Database File</label>
+    <input type="file" id="fileInput" accept=".db,.sqlite,.sqlite3,.jpg,.jpeg,.png">
+    <p>Select <code>ec_database.db</code> from the energydata folder<br>
+    Also accepts renamed files (.jpg, .png)</p>
+</div>
+
+<div class="hint">
+    <strong>How to find the file:</strong><br>
+    Head unit File Manager &rarr; navigate to <code>energydata</code> folder &rarr; find <code>ec_database.db</code><br>
+    If the file picker shows a different view, look in the internal storage or try searching for "ec_database"
+</div>
+
+<div id="status"></div>
+<div id="results"></div>
+
+<script>
+const statusEl = document.getElementById('status');
+const resultsEl = document.getElementById('results');
+
+function setStatus(msg, type) {
+    statusEl.textContent = msg;
+    statusEl.className = type;
+}
+
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    setStatus(`Loading ${file.name} (${(file.size / 1024).toFixed(1)} KB)...`, 'info');
+    resultsEl.innerHTML = '';
+
+    try {
+        const buffer = await file.arrayBuffer();
+        const uint8 = new Uint8Array(buffer);
+
+        // Check if it's actually a SQLite file (magic bytes: "SQLite format 3\0")
+        const header = String.fromCharCode(...uint8.slice(0, 16));
+        if (!header.startsWith('SQLite format 3')) {
+            setStatus('This file does not appear to be a SQLite database. Expected "SQLite format 3" header.', 'error');
+            return;
+        }
+
+        setStatus('Initializing SQL engine...', 'info');
+        const SQL = await initSqlJs({
+            locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`
+        });
+
+        const db = new SQL.Database(uint8);
+        setStatus('Database loaded successfully!', 'success');
+
+        // Get all tables
+        const tables = db.exec("SELECT name, type FROM sqlite_master WHERE type='table' ORDER BY name");
+        if (!tables.length || !tables[0].values.length) {
+            setStatus('Database contains no tables.', 'error');
+            return;
+        }
+
+        const tableNames = tables[0].values.map(r => r[0]);
+
+        // Summary
+        let summaryHTML = '<div class="summary"><h3>Database Summary</h3><div class="summary-grid">';
+        summaryHTML += `<div class="summary-item"><span>File:</span> ${file.name}</div>`;
+        summaryHTML += `<div class="summary-item"><span>Size:</span> ${(file.size / 1024).toFixed(1)} KB</div>`;
+        summaryHTML += `<div class="summary-item"><span>Tables:</span> ${tableNames.length}</div>`;
+
+        // Count rows per table
+        let totalRows = 0;
+        const tableCounts = {};
+        for (const tname of tableNames) {
+            try {
+                const countResult = db.exec(`SELECT COUNT(*) FROM "${tname}"`);
+                const count = countResult[0]?.values[0]?.[0] || 0;
+                tableCounts[tname] = count;
+                totalRows += count;
+            } catch (e) {
+                tableCounts[tname] = '?';
+            }
+        }
+        summaryHTML += `<div class="summary-item"><span>Total rows:</span> ${totalRows.toLocaleString()}</div>`;
+        summaryHTML += '</div></div>';
+
+        // Export all button
+        summaryHTML += '<button class="export-btn" onclick="exportAllCSV()">Export All Tables as CSV</button>';
+
+        resultsEl.innerHTML = summaryHTML;
+
+        // Render each table
+        for (const tname of tableNames) {
+            const section = document.createElement('div');
+            section.className = 'table-section';
+
+            // Get schema
+            let schemaText = '';
+            try {
+                const schemaResult = db.exec(`SELECT sql FROM sqlite_master WHERE name="${tname}"`);
+                schemaText = schemaResult[0]?.values[0]?.[0] || '';
+            } catch (e) {}
+
+            // Get data (limit to 500 rows for display)
+            let data;
+            try {
+                data = db.exec(`SELECT * FROM "${tname}" LIMIT 500`);
+            } catch (e) {
+                section.innerHTML = `<div class="table-header"><h3>${tname}</h3><span class="count">Error: ${e.message}</span></div>`;
+                resultsEl.appendChild(section);
+                continue;
+            }
+
+            const rowCount = tableCounts[tname];
+            const headerEl = document.createElement('div');
+            headerEl.className = 'table-header';
+            headerEl.innerHTML = `<h3>${tname}</h3><div><span class="count">${rowCount} rows</span> <span class="toggle">&#9660;</span></div>`;
+
+            const contentEl = document.createElement('div');
+            contentEl.className = 'table-content';
+
+            headerEl.addEventListener('click', () => {
+                contentEl.classList.toggle('open');
+                const toggle = headerEl.querySelector('.toggle');
+                toggle.innerHTML = contentEl.classList.contains('open') ? '&#9650;' : '&#9660;';
+            });
+
+            if (data.length && data[0].columns.length) {
+                const columns = data[0].columns;
+                const rows = data[0].values;
+
+                let tableHTML = '<table><thead><tr>';
+                for (const col of columns) {
+                    tableHTML += `<th>${col}</th>`;
+                }
+                tableHTML += '</tr></thead><tbody>';
+
+                for (const row of rows) {
+                    tableHTML += '<tr>';
+                    for (const val of row) {
+                        let display = val === null ? '<em style="color:#484f58">NULL</em>' : String(val);
+                        // Try to detect Unix timestamps and show human-readable dates
+                        if (typeof val === 'number' && val > 1600000000 && val < 2000000000) {
+                            const d = new Date(val * 1000);
+                            display = `${val} <span style="color:#8b949e">(${d.toLocaleString()})</span>`;
+                        }
+                        tableHTML += `<td>${display}</td>`;
+                    }
+                    tableHTML += '</tr>';
+                }
+
+                tableHTML += '</tbody></table>';
+
+                if (rowCount > 500) {
+                    tableHTML += `<div style="padding:8px 12px;color:#f0883e;font-size:0.8em;">Showing first 500 of ${rowCount} rows</div>`;
+                }
+
+                contentEl.innerHTML = tableHTML;
+            } else {
+                contentEl.innerHTML = '<div style="padding:16px;color:#8b949e;">Empty table</div>';
+            }
+
+            // Schema info
+            if (schemaText) {
+                contentEl.innerHTML += `<div class="schema-info">${schemaText}</div>`;
+            }
+
+            // Per-table export button
+            contentEl.innerHTML += `<div style="padding:8px"><button class="export-btn" onclick="exportTableCSV('${tname}')">Export ${tname} as CSV</button></div>`;
+
+            section.appendChild(headerEl);
+            section.appendChild(contentEl);
+            resultsEl.appendChild(section);
+        }
+
+        // Store db globally for export functions
+        window._db = db;
+        window._tableNames = tableNames;
+
+        // Auto-open the first table that looks like trip data
+        const tripTable = tableNames.find(t =>
+            t.toLowerCase().includes('trip') ||
+            t.toLowerCase().includes('energy') ||
+            t.toLowerCase().includes('journey') ||
+            t.toLowerCase().includes('drive')
+        );
+        if (tripTable) {
+            const sections = document.querySelectorAll('.table-section');
+            for (const s of sections) {
+                if (s.querySelector('h3')?.textContent === tripTable) {
+                    s.querySelector('.table-content').classList.add('open');
+                    s.querySelector('.toggle').innerHTML = '&#9650;';
+                    break;
+                }
+            }
+        }
+
+    } catch (err) {
+        setStatus(`Error reading database: ${err.message}`, 'error');
+        console.error(err);
+    }
+});
+
+function exportTableCSV(tableName) {
+    if (!window._db) return;
+    try {
+        const data = window._db.exec(`SELECT * FROM "${tableName}"`);
+        if (!data.length) return;
+
+        const columns = data[0].columns;
+        const rows = data[0].values;
+
+        let csv = columns.join(',') + '\n';
+        for (const row of rows) {
+            csv += row.map(v => {
+                if (v === null) return '';
+                const s = String(v);
+                if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+                    return '"' + s.replace(/"/g, '""') + '"';
+                }
+                return s;
+            }).join(',') + '\n';
+        }
+
+        downloadCSV(csv, `${tableName}.csv`);
+    } catch (e) {
+        alert('Export failed: ' + e.message);
+    }
+}
+
+function exportAllCSV() {
+    if (!window._db || !window._tableNames) return;
+    for (const tname of window._tableNames) {
+        exportTableCSV(tname);
+    }
+}
+
+function downloadCSV(content, filename) {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+</script>
+
+</body>
+</html>
